@@ -431,15 +431,22 @@ def check_command(cmd: str) -> tuple[bool, str]:
         return (False, "")
 
 
-def check_docker_running() -> bool:
-    """Check if Docker daemon is running."""
+def check_docker_running() -> tuple[bool, str]:
+    """Check if Docker daemon is running. Returns (ok, error_detail)."""
     try:
         result = subprocess.run(
-            ["docker", "info"], capture_output=True, text=True, timeout=10
+            ["docker", "ps", "-q"], capture_output=True, text=True, timeout=30
         )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+        if result.returncode == 0:
+            return (True, "")
+        stderr = result.stderr.strip()
+        # Grab first meaningful line of stderr
+        detail = stderr.split("\n")[0][:120] if stderr else f"exit code {result.returncode}"
+        return (False, detail)
+    except FileNotFoundError:
+        return (False, "docker command not found in PATH")
+    except subprocess.TimeoutExpired:
+        return (False, "docker ps timed out after 30s — daemon may be starting")
 
 
 def check_wsl_metadata() -> bool:
@@ -449,6 +456,44 @@ def check_wsl_metadata() -> bool:
             content = f.read().lower()
             return "metadata" in content
     except FileNotFoundError:
+        return False
+
+
+def fix_wsl_metadata() -> bool:
+    """Auto-fix WSL metadata by appending [automount] to /etc/wsl.conf."""
+    conf_path = "/etc/wsl.conf"
+    automount_block = "\n[automount]\noptions = \"metadata\"\n"
+    try:
+        existing = ""
+        try:
+            with open(conf_path, "r") as f:
+                existing = f.read()
+        except FileNotFoundError:
+            pass
+
+        # If [automount] section exists, append the option under it
+        if "[automount]" in existing.lower():
+            # Already has section — inject options line after the header
+            import re as _re
+            patched = _re.sub(
+                r'(\[automount\])',
+                r'\1\noptions = "metadata"',
+                existing,
+                count=1,
+                flags=_re.IGNORECASE,
+            )
+            result = subprocess.run(
+                ["sudo", "tee", conf_path],
+                input=patched, capture_output=True, text=True,
+            )
+        else:
+            # No [automount] section — append the whole block
+            result = subprocess.run(
+                ["sudo", "tee", "-a", conf_path],
+                input=automount_block, capture_output=True, text=True,
+            )
+        return result.returncode == 0
+    except Exception:
         return False
 
 
@@ -472,10 +517,12 @@ def run_preflight(config: SetupConfig) -> bool:
 
     # Docker
     docker_ok, docker_ver = check_command("docker")
-    docker_running = check_docker_running() if docker_ok else False
+    docker_running, docker_err = check_docker_running() if docker_ok else (False, "")
     show_check("Docker", docker_ok, docker_ver)
     if docker_ok and not docker_running:
-        console.print("    [yellow]⚠  Docker is installed but not running. Start Docker Desktop first.[/]")
+        console.print("    [yellow]⚠  Docker is installed but not responding.[/]")
+        if docker_err:
+            console.print(f"    [dim]Reason: {docker_err}[/]")
         all_ok = False
         critical_missing.append("Docker (not running)")
     elif not docker_ok:
@@ -517,20 +564,42 @@ def run_preflight(config: SetupConfig) -> bool:
         console.print()
         wsl_meta = check_wsl_metadata()
         show_check("WSL metadata mount", wsl_meta,
-                    "chmod will work on /mnt/c" if wsl_meta else "See setup note below")
+                    "chmod will work on /mnt/c" if wsl_meta else "Needs fix")
         if not wsl_meta:
             console.print()
-            show_info_box("WSL Fix Required", textwrap.dedent("""
-                [yellow]chmod won't work on Windows filesystem files without metadata.[/]
+            console.print("    [yellow]chmod won't work on Windows filesystem files without metadata.[/]")
+            console.print()
+            auto_fix = questionary.confirm(
+                "  Auto-fix /etc/wsl.conf? (requires sudo)",
+                default=True,
+            ).ask()
+            if auto_fix:
+                if fix_wsl_metadata():
+                    console.print("    [green]✓ Updated /etc/wsl.conf with metadata option.[/]")
+                    console.print("    [cyan]Restart WSL to apply: close this terminal, then in PowerShell run:[/]")
+                    console.print("      [bold cyan]wsl --shutdown[/]")
+                    console.print("    [cyan]Then reopen your WSL terminal and re-run setup.[/]")
+                else:
+                    console.print("    [red]✗ Could not update /etc/wsl.conf. Apply manually:[/]")
+                    show_info_box("Manual Fix", textwrap.dedent("""
+                        Add to [bold]/etc/wsl.conf[/]:
 
-                Fix: Add this to [bold]/etc/wsl.conf[/] inside WSL:
+                          [cyan][automount]
+                          options = "metadata"[/]
 
-                  [cyan][automount]
-                  options = "metadata"[/]
+                        Then restart WSL from PowerShell:
+                          [cyan]wsl --shutdown[/]
+                    """).strip(), style="yellow")
+            else:
+                show_info_box("Manual Fix", textwrap.dedent("""
+                    Add to [bold]/etc/wsl.conf[/]:
 
-                Then restart WSL from PowerShell:
-                  [cyan]wsl --shutdown && wsl -d Ubuntu[/]
-            """).strip(), style="yellow")
+                      [cyan][automount]
+                      options = "metadata"[/]
+
+                    Then restart WSL from PowerShell:
+                      [cyan]wsl --shutdown[/]
+                """).strip(), style="yellow")
 
     # ── Summary ──
     console.print()
@@ -558,14 +627,18 @@ def run_preflight(config: SetupConfig) -> bool:
                 return False
             # Re-check Docker
             console.print("\n  [dim]Checking Docker...[/]")
-            if check_docker_running():
+            running, err = check_docker_running()
+            if running:
                 console.print("  [bold green]✔[/] Docker is now running!")
                 console.print()
                 show_info_box("All Clear", "[bold green]All required tools are installed and running.[/]\nReady to proceed with setup.", style="green")
                 pause()
                 return True
             else:
-                console.print("  [bold red]✘[/] Docker still not running. Start Docker Desktop and try again.\n")
+                console.print("  [bold red]✘[/] Docker still not responding.")
+                if err:
+                    console.print(f"    [dim]Reason: {err}[/]")
+                console.print()
     else:
         missing_str = ", ".join(critical_missing)
         show_info_box("Missing Requirements",
@@ -580,11 +653,35 @@ def run_preflight(config: SetupConfig) -> bool:
 #  STEP 1 — INSTALL DIRECTORY
 # ══════════════════════════════════════════════════════════════════
 
+def _get_windows_home_via_wsl() -> str:
+    """Resolve the real Windows user profile path from inside WSL."""
+    try:
+        result = subprocess.run(
+            ["cmd.exe", "/C", "echo", "%USERPROFILE%"],
+            capture_output=True, text=True, timeout=10,
+        )
+        win_path = result.stdout.strip()
+        if win_path and ":" in win_path:
+            # Convert e.g. C:\Users\pbrne → /mnt/c/Users/pbrne
+            drive = win_path[0].lower()
+            rest = win_path[2:].replace("\\", "/")
+            return f"/mnt/{drive}{rest}"
+    except Exception:
+        pass
+    return ""
+
+
 def step_install_dir(config: SetupConfig, came_from="next"):
     if config.is_wsl:
-        # Default to Windows-accessible path so files are visible in File Explorer
-        win_user = os.environ.get("USER", os.environ.get("LOGNAME", ""))
-        default_dir = f"/mnt/c/Users/{win_user}/alcatraz"
+        # Resolve actual Windows home — $USER is the WSL username which
+        # may differ from the Windows username (causes PermissionError)
+        win_home = _get_windows_home_via_wsl()
+        if win_home:
+            default_dir = f"{win_home}/alcatraz"
+        else:
+            # Fallback: best guess from WSL $USER
+            win_user = os.environ.get("USER", os.environ.get("LOGNAME", ""))
+            default_dir = f"/mnt/c/Users/{win_user}/alcatraz"
     else:
         default_dir = os.path.expanduser("~/alcatraz")
     first_iter = True
