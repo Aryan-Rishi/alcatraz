@@ -1542,6 +1542,10 @@ def generate_dockerfile(config: SetupConfig) -> str:
 
     # Workdir + user switch
     sections.append(textwrap.dedent("""
+        # Disable Claude Code auto-update — pinned at build time, avoids
+        # permission errors when running as non-root 'node' user
+        ENV DISABLE_AUTOUPDATE=1
+
         WORKDIR /workspace
         USER node"""))
 

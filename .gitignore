@@ -1,0 +1,32 @@
+# Archive artifacts
+*.zip
+alcatraz-main/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Debug logs
+wizard_debug.log
+
+# Generated output (from wizard runs)
+Dockerfile
+run.sh
+build.sh
+git-guardian.sh
+branch-ruleset.json
+pretool-hook.sh
+settings.json
+alcatraz
+
+# Credentials
+.alcatraz-token
+*.credentials.json
+
+# Claude Code
+CLAUDE.md
+
+# OS
+.DS_Store
+Thumbs.db
