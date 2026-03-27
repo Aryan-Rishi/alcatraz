@@ -26,6 +26,10 @@ alcatraz
 
 # Claude Code
 CLAUDE.md
+.mcp.json
+
+# Other files
+OtherFiles/
 
 # OS
 .DS_Store

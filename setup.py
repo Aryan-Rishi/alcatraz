@@ -1327,8 +1327,14 @@ case "$subcommand" in
         ;;
 
     branch)
-        if args_match '^-D$' "${{sub_args[@]}}"; then
-            confirm "MEDIUM" "Force-deleting a local branch." "$@" || exit 1
+        if args_match '^(-d|-D|--delete)$' "${{sub_args[@]}}"; then
+            if has_protected_branch "${{sub_args[@]}}"; then
+                echo -e "${{RED}}✗ Git Guardian: BLOCKED — deleting a protected branch is not allowed${{NC}}" >&2
+                log "HARD-BLOCKED: branch delete on protected branch — git $*"
+                exit 1
+            elif args_match '^-D$' "${{sub_args[@]}}"; then
+                confirm "MEDIUM" "Force-deleting a local branch." "$@" || exit 1
+            fi
         fi
         ;;
 
@@ -1902,6 +1908,7 @@ When the user starts a dev server or asks to view a URL, ALWAYS tell them the HO
 
 
 def generate_pretool_hook(config: SetupConfig) -> str:
+    branches_re = '|'.join(config.protected_branches)
     return textwrap.dedent(f'''\
 #!/bin/bash
 # pretool-hook.sh — PreToolUse hook that blocks dangerous commands
@@ -1922,6 +1929,8 @@ BLOCKED_PATTERNS=(
     'git push.*--delete'
     'git push.*:refs/'
     'git stash clear'
+    # Block deletion of protected branches (main, master, etc.)
+    'git branch.*(-[dD]|--delete).*\\b({branches_re})\\b'
     'gh repo delete'
     'gh api.*/repos.*DELETE'
     'curl.*api\\.github\\.com'
@@ -1976,20 +1985,24 @@ def generate_settings_json(config: SetupConfig) -> str:
         }
 
     if config.enable_deny_list:
-        settings["permissions"] = {
-            "deny": [
-                "Bash(gh repo delete*)",
-                "Bash(gh api */repos*DELETE*)",
-                "Bash(curl*api.github.com*)",
-                "Bash(wget*api.github.com*)",
-                "Bash(rm -rf /*)",
-                "Bash(rm -rf ~*)",
-                "Bash(chmod 777*)",
-                "Bash(git push*--force*)",
-                "Bash(git push*--delete*)",
-                "Bash(git stash clear*)",
-            ]
-        }
+        deny = [
+            "Bash(gh repo delete*)",
+            "Bash(gh api */repos*DELETE*)",
+            "Bash(curl*api.github.com*)",
+            "Bash(wget*api.github.com*)",
+            "Bash(rm -rf /*)",
+            "Bash(rm -rf ~*)",
+            "Bash(chmod 777*)",
+            "Bash(git push*--force*)",
+            "Bash(git push*--delete*)",
+            "Bash(git stash clear*)",
+        ]
+        # Block deletion of protected branches
+        for branch in config.protected_branches:
+            deny.append(f"Bash(git branch*-d *{branch}*)")
+            deny.append(f"Bash(git branch*-D *{branch}*)")
+            deny.append(f"Bash(git branch*--delete *{branch}*)")
+        settings["permissions"] = {"deny": deny}
 
     if config.enable_pretool_hook:
         settings["hooks"] = {
