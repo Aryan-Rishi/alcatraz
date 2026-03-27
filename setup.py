@@ -1544,7 +1544,7 @@ def generate_dockerfile(config: SetupConfig) -> str:
     sections.append(textwrap.dedent("""
         # Disable Claude Code auto-update — pinned at build time, avoids
         # permission errors when running as non-root 'node' user
-        ENV DISABLE_AUTOUPDATE=1
+        ENV DISABLE_AUTOUPDATER=1
 
         WORKDIR /workspace
         USER node"""))
@@ -1585,6 +1585,7 @@ def generate_run_script(config: SetupConfig) -> str:
     docker_flags.append('    --env-file "$ENV_FILE"')
     docker_flags.append('    -e "HOST_GIT_NAME=$HOST_GIT_NAME"')
     docker_flags.append('    -e "HOST_GIT_EMAIL=$HOST_GIT_EMAIL"')
+    docker_flags.append('    -e DISABLE_AUTOUPDATER=1')
     docker_flags.append('    alcatraz:latest')
 
     docker_flags_str = " \\\n".join(docker_flags)
