@@ -431,15 +431,22 @@ def check_command(cmd: str) -> tuple[bool, str]:
         return (False, "")
 
 
-def check_docker_running() -> bool:
-    """Check if Docker daemon is running."""
+def check_docker_running() -> tuple[bool, str]:
+    """Check if Docker daemon is running. Returns (ok, error_detail)."""
     try:
         result = subprocess.run(
-            ["docker", "info"], capture_output=True, text=True, timeout=10
+            ["docker", "ps", "-q"], capture_output=True, text=True, timeout=30
         )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+        if result.returncode == 0:
+            return (True, "")
+        stderr = result.stderr.strip()
+        # Grab first meaningful line of stderr
+        detail = stderr.split("\n")[0][:120] if stderr else f"exit code {result.returncode}"
+        return (False, detail)
+    except FileNotFoundError:
+        return (False, "docker command not found in PATH")
+    except subprocess.TimeoutExpired:
+        return (False, "docker ps timed out after 30s — daemon may be starting")
 
 
 def check_wsl_metadata() -> bool:
@@ -449,6 +456,44 @@ def check_wsl_metadata() -> bool:
             content = f.read().lower()
             return "metadata" in content
     except FileNotFoundError:
+        return False
+
+
+def fix_wsl_metadata() -> bool:
+    """Auto-fix WSL metadata by appending [automount] to /etc/wsl.conf."""
+    conf_path = "/etc/wsl.conf"
+    automount_block = "\n[automount]\noptions = \"metadata\"\n"
+    try:
+        existing = ""
+        try:
+            with open(conf_path, "r") as f:
+                existing = f.read()
+        except FileNotFoundError:
+            pass
+
+        # If [automount] section exists, append the option under it
+        if "[automount]" in existing.lower():
+            # Already has section — inject options line after the header
+            import re as _re
+            patched = _re.sub(
+                r'(\[automount\])',
+                r'\1\noptions = "metadata"',
+                existing,
+                count=1,
+                flags=_re.IGNORECASE,
+            )
+            result = subprocess.run(
+                ["sudo", "tee", conf_path],
+                input=patched, capture_output=True, text=True,
+            )
+        else:
+            # No [automount] section — append the whole block
+            result = subprocess.run(
+                ["sudo", "tee", "-a", conf_path],
+                input=automount_block, capture_output=True, text=True,
+            )
+        return result.returncode == 0
+    except Exception:
         return False
 
 
@@ -472,10 +517,12 @@ def run_preflight(config: SetupConfig) -> bool:
 
     # Docker
     docker_ok, docker_ver = check_command("docker")
-    docker_running = check_docker_running() if docker_ok else False
+    docker_running, docker_err = check_docker_running() if docker_ok else (False, "")
     show_check("Docker", docker_ok, docker_ver)
     if docker_ok and not docker_running:
-        console.print("    [yellow]⚠  Docker is installed but not running. Start Docker Desktop first.[/]")
+        console.print("    [yellow]⚠  Docker is installed but not responding.[/]")
+        if docker_err:
+            console.print(f"    [dim]Reason: {docker_err}[/]")
         all_ok = False
         critical_missing.append("Docker (not running)")
     elif not docker_ok:
@@ -517,20 +564,42 @@ def run_preflight(config: SetupConfig) -> bool:
         console.print()
         wsl_meta = check_wsl_metadata()
         show_check("WSL metadata mount", wsl_meta,
-                    "chmod will work on /mnt/c" if wsl_meta else "See setup note below")
+                    "chmod will work on /mnt/c" if wsl_meta else "Needs fix")
         if not wsl_meta:
             console.print()
-            show_info_box("WSL Fix Required", textwrap.dedent("""
-                [yellow]chmod won't work on Windows filesystem files without metadata.[/]
+            console.print("    [yellow]chmod won't work on Windows filesystem files without metadata.[/]")
+            console.print()
+            auto_fix = questionary.confirm(
+                "  Auto-fix /etc/wsl.conf? (requires sudo)",
+                default=True,
+            ).ask()
+            if auto_fix:
+                if fix_wsl_metadata():
+                    console.print("    [green]✓ Updated /etc/wsl.conf with metadata option.[/]")
+                    console.print("    [cyan]Restart WSL to apply: close this terminal, then in PowerShell run:[/]")
+                    console.print("      [bold cyan]wsl --shutdown[/]")
+                    console.print("    [cyan]Then reopen your WSL terminal and re-run setup.[/]")
+                else:
+                    console.print("    [red]✗ Could not update /etc/wsl.conf. Apply manually:[/]")
+                    show_info_box("Manual Fix", textwrap.dedent("""
+                        Add to [bold]/etc/wsl.conf[/]:
 
-                Fix: Add this to [bold]/etc/wsl.conf[/] inside WSL:
+                          [cyan][automount]
+                          options = "metadata"[/]
 
-                  [cyan][automount]
-                  options = "metadata"[/]
+                        Then restart WSL from PowerShell:
+                          [cyan]wsl --shutdown[/]
+                    """).strip(), style="yellow")
+            else:
+                show_info_box("Manual Fix", textwrap.dedent("""
+                    Add to [bold]/etc/wsl.conf[/]:
 
-                Then restart WSL from PowerShell:
-                  [cyan]wsl --shutdown && wsl -d Ubuntu[/]
-            """).strip(), style="yellow")
+                      [cyan][automount]
+                      options = "metadata"[/]
+
+                    Then restart WSL from PowerShell:
+                      [cyan]wsl --shutdown[/]
+                """).strip(), style="yellow")
 
     # ── Summary ──
     console.print()
@@ -558,14 +627,18 @@ def run_preflight(config: SetupConfig) -> bool:
                 return False
             # Re-check Docker
             console.print("\n  [dim]Checking Docker...[/]")
-            if check_docker_running():
+            running, err = check_docker_running()
+            if running:
                 console.print("  [bold green]✔[/] Docker is now running!")
                 console.print()
                 show_info_box("All Clear", "[bold green]All required tools are installed and running.[/]\nReady to proceed with setup.", style="green")
                 pause()
                 return True
             else:
-                console.print("  [bold red]✘[/] Docker still not running. Start Docker Desktop and try again.\n")
+                console.print("  [bold red]✘[/] Docker still not responding.")
+                if err:
+                    console.print(f"    [dim]Reason: {err}[/]")
+                console.print()
     else:
         missing_str = ", ".join(critical_missing)
         show_info_box("Missing Requirements",
@@ -580,11 +653,35 @@ def run_preflight(config: SetupConfig) -> bool:
 #  STEP 1 — INSTALL DIRECTORY
 # ══════════════════════════════════════════════════════════════════
 
+def _get_windows_home_via_wsl() -> str:
+    """Resolve the real Windows user profile path from inside WSL."""
+    try:
+        result = subprocess.run(
+            ["cmd.exe", "/C", "echo", "%USERPROFILE%"],
+            capture_output=True, text=True, timeout=10,
+        )
+        win_path = result.stdout.strip()
+        if win_path and ":" in win_path:
+            # Convert e.g. C:\Users\pbrne → /mnt/c/Users/pbrne
+            drive = win_path[0].lower()
+            rest = win_path[2:].replace("\\", "/")
+            return f"/mnt/{drive}{rest}"
+    except Exception:
+        pass
+    return ""
+
+
 def step_install_dir(config: SetupConfig, came_from="next"):
     if config.is_wsl:
-        # Default to Windows-accessible path so files are visible in File Explorer
-        win_user = os.environ.get("USER", os.environ.get("LOGNAME", ""))
-        default_dir = f"/mnt/c/Users/{win_user}/alcatraz"
+        # Resolve actual Windows home — $USER is the WSL username which
+        # may differ from the Windows username (causes PermissionError)
+        win_home = _get_windows_home_via_wsl()
+        if win_home:
+            default_dir = f"{win_home}/alcatraz"
+        else:
+            # Fallback: best guess from WSL $USER
+            win_user = os.environ.get("USER", os.environ.get("LOGNAME", ""))
+            default_dir = f"/mnt/c/Users/{win_user}/alcatraz"
     else:
         default_dir = os.path.expanduser("~/alcatraz")
     first_iter = True
@@ -2183,7 +2280,8 @@ def step_review_and_generate(config: SetupConfig, came_from="next"):
     if config.enable_deny_list or config.enable_pretool_hook:
         console.print(f"  [cyan]  ├── settings.json[/]       [dim](copy to project .claude/)[/]")
     console.print(f"  [cyan]  ├── branch-ruleset.json[/] [dim](import into GitHub rulesets)[/]")
-    console.print(f"  [cyan]  └── build.sh[/]")
+    console.print(f"  [cyan]  ├── build.sh[/]")
+    console.print(f"  [cyan]  └── auth.sh[/]              [dim](one-time OAuth login)[/]")
     console.print()
 
     action = questionary.select(
@@ -2211,8 +2309,12 @@ def step_review_and_generate(config: SetupConfig, came_from="next"):
         except OSError:
             pass
 
+    def write_lf(path: Path, content: str):
+        """Write file with Unix (LF) line endings — required for bash scripts on WSL."""
+        path.write_text(content, newline="\n")
+
     # Calculate actual file count for accurate progress
-    file_count = 6  # Dockerfile, git-guardian.sh, run.sh, alcatraz, build.sh, branch-ruleset.json
+    file_count = 7  # Dockerfile, git-guardian.sh, run.sh, alcatraz, build.sh, branch-ruleset.json, auth.sh
     if config.enable_pretool_hook:
         file_count += 1
     if config.enable_deny_list or config.enable_pretool_hook:
@@ -2229,41 +2331,41 @@ def step_review_and_generate(config: SetupConfig, came_from="next"):
             task = progress.add_task("Generating files...", total=file_count)
 
             # Dockerfile
-            (install_dir / "Dockerfile").write_text(generate_dockerfile(config))
+            write_lf(install_dir / "Dockerfile", generate_dockerfile(config))
             progress.update(task, advance=1, description="Wrote Dockerfile")
 
             # Git Guardian
             guardian_path = install_dir / "git-guardian.sh"
-            guardian_path.write_text(generate_git_guardian(config))
+            write_lf(guardian_path, generate_git_guardian(config))
             make_executable(guardian_path)
             progress.update(task, advance=1, description="Wrote git-guardian.sh")
 
             # run.sh
             run_path = install_dir / "run.sh"
-            run_path.write_text(generate_run_script(config))
+            write_lf(run_path, generate_run_script(config))
             make_executable(run_path)
             progress.update(task, advance=1, description="Wrote run.sh")
 
             # alcatraz launcher wrapper
             wrapper_path = install_dir / "alcatraz"
-            wrapper_path.write_text(generate_wrapper_script(config))
+            write_lf(wrapper_path, generate_wrapper_script(config))
             make_executable(wrapper_path)
             progress.update(task, advance=1, description="Wrote alcatraz")
 
             # PreToolUse hook
             if config.enable_pretool_hook:
                 hook_path = install_dir / "pretool-hook.sh"
-                hook_path.write_text(generate_pretool_hook(config))
+                write_lf(hook_path, generate_pretool_hook(config))
                 make_executable(hook_path)
                 progress.update(task, advance=1, description="Wrote pretool-hook.sh")
 
             # settings.json
             if config.enable_deny_list or config.enable_pretool_hook:
-                (install_dir / "settings.json").write_text(generate_settings_json(config))
+                write_lf(install_dir / "settings.json", generate_settings_json(config))
                 progress.update(task, advance=1, description="Wrote settings.json")
 
             # branch-ruleset.json
-            (install_dir / "branch-ruleset.json").write_text(generate_branch_ruleset())
+            write_lf(install_dir / "branch-ruleset.json", generate_branch_ruleset())
             progress.update(task, advance=1, description="Wrote branch-ruleset.json")
 
             # build.sh
@@ -2290,9 +2392,44 @@ echo "Launch on a project:"
 echo "  alcatraz /path/to/project"
 """)
             build_path = install_dir / "build.sh"
-            build_path.write_text(build_script)
+            write_lf(build_path, build_script)
             make_executable(build_path)
             progress.update(task, advance=1, description="Wrote build.sh")
+
+            # auth.sh
+            auth_script = textwrap.dedent(f"""\
+#!/bin/bash
+set -e
+# auth.sh — One-time OAuth login for Claude Code
+# Generated by Alcatraz Setup Wizard v{VERSION}
+
+echo "Setting up Claude Code authentication..."
+
+# Ensure credential paths exist on host
+if [ -d "$HOME/.claude.json" ]; then
+  echo "Warning: $HOME/.claude.json is a directory — removing it"
+  rm -rf "$HOME/.claude.json"
+fi
+if [ ! -f "$HOME/.claude.json" ]; then
+  echo '{{"hasCompletedOnboarding":true}}' > "$HOME/.claude.json"
+fi
+mkdir -p "$HOME/.claude"
+
+echo ""
+echo "Launching auth container — a browser window will open."
+echo "Complete the login, then type /exit in the terminal."
+echo ""
+
+docker run -it --rm \\
+  -v "$HOME/.claude:/home/node/.claude" \\
+  -v "$HOME/.claude.json:/home/node/.claude.json" \\
+  alcatraz:latest \\
+  claude --dangerously-skip-permissions
+""")
+            auth_path = install_dir / "auth.sh"
+            write_lf(auth_path, auth_script)
+            make_executable(auth_path)
+            progress.update(task, advance=1, description="Wrote auth.sh")
 
     except Exception as e:
         console.print()
@@ -2701,37 +2838,31 @@ def step_claude_auth(config: SetupConfig, came_from="next"):
             console.print()
 
         if config.auth_method == "oauth":
-            show_info_box("OAuth Authentication", textwrap.dedent("""
-                Claude Code authenticates via OAuth (browser-based login).
-                You need to run the container once to complete this flow.
-
-                [bold]Steps:[/]
-                [bold]1.[/] Ensure these exist on your host:
-                   [cyan]echo '{{"hasCompletedOnboarding":true}}' > ~/.claude.json
-                   mkdir -p ~/.claude[/]
-
-                [bold]2.[/] Run the auth container:
-                   [cyan]docker run -it --rm \\
-                       -v "$HOME/.claude:/home/node/.claude" \\
-                       -v "$HOME/.claude.json:/home/node/.claude.json" \\
-                       alcatraz:latest \\
-                       claude --dangerously-skip-permissions[/]
-
-                [bold]3.[/] A browser window opens — complete the login
-                [bold]4.[/] Return to the terminal, type [cyan]/exit[/] to leave
-            """).strip())
+            console.print("  [bold cyan]── OAuth Authentication ──[/]")
+            console.print()
+            console.print("  Claude Code authenticates via OAuth (browser-based login).")
+            console.print("  After building the image, run the generated auth script:")
+            console.print()
+            console.print(f"     [cyan]cd {config.install_dir} && ./auth.sh[/]")
+            console.print()
+            console.print("  This will open a browser window — complete the login,")
+            console.print("  then type [cyan]/exit[/] in the terminal.")
+            console.print()
+            console.print("  [bold cyan]──────────────────────────[/]")
         else:
-            show_info_box("API Key Authentication", textwrap.dedent("""
-                If using an Anthropic API key instead of OAuth:
-
-                [bold]1.[/] Store your key:
-                   [cyan]echo 'sk-ant-xxxxx' > ~/.alcatraz-anthropic-key[/]
-
-                [bold]2.[/] Uncomment the API key section in [cyan]run.sh[/]:
-                   Find the [dim]ANTHROPIC_API_KEY_FILE[/] lines and uncomment them.
-
-                The key will be injected into the container at launch.
-            """).strip())
+            console.print("  [bold cyan]── API Key Authentication ──[/]")
+            console.print()
+            console.print("  If using an Anthropic API key instead of OAuth:")
+            console.print()
+            console.print("  [bold]1.[/] Store your key:")
+            console.print("     [cyan]echo 'sk-ant-xxxxx' > ~/.alcatraz-anthropic-key[/]")
+            console.print()
+            console.print("  [bold]2.[/] Uncomment the API key section in [cyan]run.sh[/]:")
+            console.print("     Find the [dim]ANTHROPIC_API_KEY_FILE[/] lines and uncomment them.")
+            console.print()
+            console.print("  The key will be injected into the container at launch.")
+            console.print()
+            console.print("  [bold cyan]─────────────────────────────[/]")
 
         console.print()
 
