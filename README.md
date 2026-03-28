@@ -38,12 +38,14 @@ By using this software, you acknowledge these limitations and accept responsibil
 
 ## Quick Start
 
+**Linux / macOS:**
 ```bash
-chmod +x install.sh
 ./install.sh
 ```
 
-The alcatraz wizard handles everything else — 16 guided steps from configuration through to first launch.
+**Windows:** Double-click `windowsInstall.bat` from File Explorer. This launches the wizard automatically via WSL.
+
+The wizard handles everything else — 15 guided steps from configuration through to first launch.
 
 ## What It Does
 
@@ -62,9 +64,8 @@ The alcatraz wizard handles everything else — 16 guided steps from configurati
 | 11. Claude Auth | One-time OAuth login for Claude Code |
 | 12. Project Settings | Deploy `.claude/settings.json` to your project |
 | 13. Branch Protection | Import the included branch ruleset into GitHub |
-| 14. First Launch | Launch Alcatraz for the first time |
-| 15. Install Launcher | Add `alcatraz` command to PATH |
-| 16. Daily Workflow | Usage patterns and maintenance tips |
+| 14. Install Launcher | Add `alcatraz` command to PATH |
+| 15. Daily Workflow | Usage patterns and maintenance tips |
 
 If you exit early after Step 7, you can complete the remaining steps manually:
 
@@ -254,6 +255,44 @@ docker run -it --rm \
     # ... rest of the flags
 ```
 
+## Launch Modes
+
+The `alcatraz` command accepts optional arguments for network and port modes. Arguments are order-independent — mix them freely.
+
+### Network modes
+
+| Mode | Command | Behaviour |
+|------|---------|-----------|
+| **Bridge** (default) | `alcatraz /path/to/project` | Claude has internet access — can push, pull, install packages |
+| **None** (offline) | `alcatraz /path/to/project none` | Claude works locally only — you push from the host after reviewing |
+
+### Port modes
+
+| Mode | Command | Behaviour | Parallel safe? |
+|------|---------|-----------|----------------|
+| **Deterministic** (default) | `alcatraz /path/to/project` | Hash-based host ports — run multiple containers without conflicts | Yes |
+| **Fixed** | `alcatraz /path/to/project fixed` | 1:1 mapping (3000→3000, 5173→5173) — single container only | No |
+| **No ports** | `alcatraz /path/to/project noports` | No port forwarding at all | Yes |
+
+### Combining modes
+
+```bash
+alcatraz                                # Current dir, bridge network, deterministic ports
+alcatraz /path/to/project               # Explicit path, same defaults
+alcatraz /path/to/project none          # Offline, deterministic ports
+alcatraz /path/to/project fixed         # Bridge network, fixed ports
+alcatraz . fixed none                   # Current dir, offline, fixed ports
+alcatraz . noports                      # Current dir, no port forwarding
+```
+
+### WSL
+
+From WSL bash, pass the `/mnt/c/...` path:
+
+```bash
+alcatraz /mnt/c/Users/you/projects/my-project
+```
+
 ## Multiple Projects
 
 ### One image, multiple containers
@@ -353,7 +392,9 @@ docker exec <container-name> tail -f /tmp/git-guardian.log
 echo 'github_pat_...' > ~/.alcatraz-token         # Rotate PAT
 echo 'YYYY-MM-DD' > ~/.alcatraz-token-expiry      # Update expiry
 docker image prune -f                              # Clean up images
-ln -sf <install-dir>/alcatraz ~/.local/bin/alcatraz # Manual launcher install
+ln -sf <install-dir>/alcatraz ~/.local/bin/alcatraz # Symlink launcher to PATH
+# If ~/.local/bin isn't in PATH, add to your shell config:
+# echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
 ## Troubleshooting

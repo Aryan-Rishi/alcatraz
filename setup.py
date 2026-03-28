@@ -55,7 +55,7 @@ except ImportError:
 # ── Globals ───────────────────────────────────────────────────────
 console = Console()
 VERSION = "1.1.0"
-TOTAL_STEPS = 16
+TOTAL_STEPS = 15
 
 # ── Debug tracing ─────────────────────────────────────────────────
 _DEBUG_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wizard_debug.log")
@@ -800,17 +800,18 @@ def step_profile(config: SetupConfig, came_from="next"):
         if show_best_for:
             table.add_column("Best For", style="dim")
 
+        star = lambda p: "⭐ " if config.profile == p else "   "
         rows = [
-            ("⭐ Recommended", "~4–5 GB",
+            (f"{star('recommended')}Recommended", "~4–5 GB",
              "Core tools, GitHub CLI, Cloud CLIs, Infra, Browser, DB clients",
              "Most web/backend teams"),
-            ("Minimal", "~1.5–2 GB",
+            (f"{star('minimal')}Minimal", "~1.5–2 GB",
              "Core tools, GitHub CLI only",
              "Quick start, limited disk"),
-            ("Full", "~7–8 GB",
+            (f"{star('full')}Full", "~7–8 GB",
              "Everything + ML/Data Science packages (CPU)",
              "ML engineers, data teams"),
-            ("Custom", "Varies",
+            (f"{star('custom')}Custom", "Varies",
              "You pick each component",
              "Specific requirements"),
         ]
@@ -840,13 +841,14 @@ def step_profile(config: SetupConfig, came_from="next"):
 
         _dbg(f"[step_profile] falling through to EDIT (result was {result!r})")
         # result == "edit"
+        sel = lambda p: "⭐" if config.profile == p else "  "
         profile = questionary.select(
             "Select a profile:",
             choices=[
-                questionary.Choice("⭐ Recommended  — Core + Cloud + Infra + Browser", value="recommended"),
-                questionary.Choice("   Minimal      — Core + GitHub CLI only", value="minimal"),
-                questionary.Choice("   Full         — Everything including ML packages", value="full"),
-                questionary.Choice("   Custom       — Choose each component", value="custom"),
+                questionary.Choice(f"{sel('recommended')} Recommended  — Core + Cloud + Infra + Browser", value="recommended"),
+                questionary.Choice(f"{sel('minimal')} Minimal      — Core + GitHub CLI only", value="minimal"),
+                questionary.Choice(f"{sel('full')} Full         — Everything including ML packages", value="full"),
+                questionary.Choice(f"{sel('custom')} Custom       — Choose each component", value="custom"),
             ],
             style=q_style,
         ).ask()
@@ -2661,8 +2663,15 @@ def step_token_storage(config: SetupConfig, came_from="next"):
         if result == "back":
             return "back"
         if result == "next":
-            if token_exists:
-                config.mark_complete(6)
+            if not token_exists:
+                console.print()
+                console.print("  [bold red]⚠  Cannot continue — GitHub token not stored[/]")
+                console.print(f"    Required: [cyan]{token_path}[/]")
+                console.print()
+                console.print("  [dim]Use 'Store token now' to save your PAT first.[/]")
+                pause()
+                continue
+            config.mark_complete(6)
             return "next"
         # result == "store"
         _store_token(config)
@@ -2718,6 +2727,22 @@ def step_docker_build(config: SetupConfig, came_from="next"):
         if result == "back":
             return "back"
         if result == "next":
+            try:
+                check = subprocess.run(
+                    ["docker", "images", "-q", "alcatraz:latest"],
+                    capture_output=True, text=True, timeout=10
+                )
+                image_exists = bool(check.stdout.strip())
+            except Exception:
+                image_exists = False
+            if not image_exists:
+                console.print()
+                console.print("  [bold red]⚠  Cannot continue — Docker image not built[/]")
+                console.print("    Required: [cyan]alcatraz:latest[/]")
+                console.print()
+                console.print("  [dim]Use 'Build now' to create the Docker image first.[/]")
+                pause()
+                continue
             return "next"
 
         # result == "build"
@@ -2816,6 +2841,47 @@ def step_docker_build(config: SetupConfig, came_from="next"):
 #  STEP 10 — CLAUDE AUTHENTICATION
 # ══════════════════════════════════════════════════════════════════
 
+def _run_oauth_auth(config: SetupConfig):
+    """Execute auth.sh interactively for OAuth login."""
+    clear_screen()
+    show_banner()
+    show_step_header(11, TOTAL_STEPS, "Authenticate Claude Code",
+                     "Running OAuth login…")
+    console.print()
+    console.print("  [dim]A browser window will open. Complete the login,\n"
+                  "  then type [cyan]/exit[/cyan] in the terminal.[/dim]")
+    console.print()
+
+    auth_script = os.path.join(config.install_dir, "auth.sh")
+    if not os.path.isfile(auth_script):
+        console.print(f"  [bold red]✗ Auth script not found:[/] [cyan]{auth_script}[/]")
+        console.print("  [dim]Go back to Step 7 (Review & Generate) to generate files first.[/]")
+        console.print()
+        pause()
+        return
+
+    try:
+        proc = subprocess.run(
+            ["bash", auth_script],
+            cwd=config.install_dir,
+        )
+        if proc.returncode == 0:
+            console.print()
+            console.print("  [bold green]✓ Authentication completed![/]")
+        else:
+            console.print()
+            console.print(f"  [yellow]Auth script exited with code {proc.returncode}[/]")
+            console.print(f"  [dim]You can retry or run manually: {auth_script}[/]")
+    except KeyboardInterrupt:
+        console.print(f"\n  [yellow]Auth cancelled. You can retry or run manually: {auth_script}[/]")
+    except Exception as e:
+        console.print(f"\n  [red]✗ Auth error: {e}[/]")
+        console.print(f"  [dim]You can run manually: {auth_script}[/]")
+
+    console.print()
+    pause()
+
+
 def step_claude_auth(config: SetupConfig, came_from="next"):
     """Guide through Claude Code OAuth authentication."""
     first_iter = True
@@ -2827,53 +2893,70 @@ def step_claude_auth(config: SetupConfig, came_from="next"):
 
         # Check if already authenticated
         creds_path = os.path.expanduser("~/.claude/.credentials.json")
-        already_auth = os.path.isfile(creds_path)
+        api_key_path = os.path.expanduser("~/.alcatraz-anthropic-key")
+        if config.auth_method == "oauth":
+            already_auth = os.path.isfile(creds_path)
+            check_path = creds_path
+        else:
+            already_auth = os.path.isfile(api_key_path)
+            check_path = api_key_path
 
         if already_auth:
-            console.print("  [green]✓[/] Already authenticated — credentials found at:")
-            console.print(f"    [cyan]{creds_path}[/]")
+            console.print(f"  [green]✓[/] Already authenticated — credentials found at:")
+            console.print(f"    [cyan]{check_path}[/]")
             console.print()
         else:
-            console.print("  [dim]○[/] Not yet authenticated")
+            console.print(f"  [dim]○[/] Not yet authenticated")
+            console.print(f"    Expected: [cyan]{check_path}[/]")
             console.print()
 
         if config.auth_method == "oauth":
-            console.print("  [bold cyan]── OAuth Authentication ──[/]")
-            console.print()
-            console.print("  Claude Code authenticates via OAuth (browser-based login).")
-            console.print("  After building the image, run the generated auth script:")
-            console.print()
-            console.print(f"     [cyan]cd {config.install_dir} && ./auth.sh[/]")
-            console.print()
-            console.print("  This will open a browser window — complete the login,")
-            console.print("  then type [cyan]/exit[/] in the terminal.")
-            console.print()
-            console.print("  [bold cyan]──────────────────────────[/]")
+            show_info_box("OAuth Authentication", textwrap.dedent("""
+                Claude Code authenticates via OAuth (browser-based login).
+
+                This will open a browser window — complete the login,
+                then type [cyan]/exit[/] in the terminal.
+            """).strip())
         else:
-            console.print("  [bold cyan]── API Key Authentication ──[/]")
-            console.print()
-            console.print("  If using an Anthropic API key instead of OAuth:")
-            console.print()
-            console.print("  [bold]1.[/] Store your key:")
-            console.print("     [cyan]echo 'sk-ant-xxxxx' > ~/.alcatraz-anthropic-key[/]")
-            console.print()
-            console.print("  [bold]2.[/] Uncomment the API key section in [cyan]run.sh[/]:")
-            console.print("     Find the [dim]ANTHROPIC_API_KEY_FILE[/] lines and uncomment them.")
-            console.print()
-            console.print("  The key will be injected into the container at launch.")
-            console.print()
-            console.print("  [bold cyan]─────────────────────────────[/]")
+            show_info_box("API Key Authentication", textwrap.dedent("""
+                Store your Anthropic API key:
+                  [cyan]echo 'sk-ant-xxxxx' > ~/.alcatraz-anthropic-key[/]
+
+                The key will be injected into the container at launch.
+            """).strip())
 
         console.print()
 
+        choices = []
+        if config.auth_method == "oauth":
+            if already_auth:
+                choices.append(("Re-run OAuth login", "auth"))
+            else:
+                choices.append(("Run OAuth login", "auth"))
+
         nav = 1 if first_iter and came_from == "back" else 0
         first_iter = False
-        result = step_menu([], initial_nav=nav)
+        result = step_menu(choices, initial_nav=nav)
 
         if result == "back":
             return "back"
-        config.mark_complete(8)
-        return "next"
+        if result == "next":
+            if not already_auth:
+                console.print()
+                console.print("  [bold red]⚠  Cannot continue — Claude Code not authenticated[/]")
+                console.print(f"    Required: [cyan]{check_path}[/]")
+                console.print()
+                if config.auth_method == "oauth":
+                    console.print("  [dim]Use 'Run OAuth login' above to authenticate first.[/]")
+                else:
+                    console.print("  [dim]Store your API key in [cyan]~/.alcatraz-anthropic-key[/dim] first.[/]")
+                pause()
+                continue
+            config.mark_complete(8)
+            return "next"
+
+        # result == "auth"
+        _run_oauth_auth(config)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -2985,7 +3068,11 @@ def step_project_settings(config: SetupConfig, came_from="next"):
             padding=(1, 2),
         )
 
-        console.print(Padding(Columns([layer_table, limitation_panel], padding=0), (0, 2)))
+        side_by_side = Table(box=None, show_header=False, padding=(0, 2))
+        side_by_side.add_column(vertical="top")
+        side_by_side.add_column(vertical="top")
+        side_by_side.add_row(layer_table, Padding(limitation_panel, (1, 0, 0, 0)))
+        console.print(Padding(side_by_side, (0, 2)))
         console.print()
 
         if config.enable_deny_list or config.enable_pretool_hook:
@@ -3064,9 +3151,6 @@ def step_branch_protection(config: SetupConfig, came_from="next"):
         rule_table.add_row("Require pull request", "1 approval required — no direct pushes")
         rule_table.add_row("Dismiss stale reviews", "Re-approval required after new commits")
         rule_table.add_row("Bypass actors", "None — rules apply to everyone")
-        console.print(Padding(rule_table, (0, 2)))
-
-        console.print()
 
         # Optional extras (manual)
         opt_table = Table(title="Optional — Add Manually After Import", box=box.ROUNDED,
@@ -3076,7 +3160,12 @@ def step_branch_protection(config: SetupConfig, came_from="next"):
         opt_table.add_row("Require status checks", "If you have CI/CD tests configured")
         opt_table.add_row("Require linear history", "Team preference — cleaner git log")
         opt_table.add_row("Require signed commits", "High security environments only")
-        console.print(Padding(opt_table, (0, 2)))
+
+        side_by_side = Table(box=None, show_header=False, padding=(0, 2))
+        side_by_side.add_column(vertical="top")
+        side_by_side.add_column(vertical="top")
+        side_by_side.add_row(rule_table, opt_table)
+        console.print(Padding(side_by_side, (0, 2)))
 
         console.print()
 
@@ -3091,85 +3180,7 @@ def step_branch_protection(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 13 — FIRST LAUNCH
-# ══════════════════════════════════════════════════════════════════
-
-def step_first_launch(config: SetupConfig, came_from="next"):
-    """Guide through the first launch of Alcatraz."""
-    first_iter = True
-    while True:
-        clear_screen()
-        show_banner()
-        show_step_header(14, TOTAL_STEPS, "First Launch",
-                         "Launch Alcatraz for the first time")
-
-        # Check if Docker image exists
-        image_found = False
-        try:
-            check = subprocess.run(
-                ["docker", "images", "-q", "alcatraz:latest"],
-                capture_output=True, text=True, timeout=10
-            )
-            image_found = bool(check.stdout.strip())
-        except Exception:
-            pass
-
-        if not image_found:
-            console.print("  [bold yellow]⚠  Docker image [cyan]alcatraz:latest[/cyan] not found.[/]")
-            console.print(f"    Run [cyan]{config.install_dir}/build.sh[/] before launching.")
-            console.print()
-
-        console.print("  [bold]Before launching, prepare a project:[/]")
-        console.print()
-        console.print("    [cyan]cd ~/projects/my-project[/]")
-        console.print("    [cyan]git status[/]                  [dim]# Ensure clean working tree[/]")
-        console.print("    [cyan]git stash[/]                   [dim]# Stash uncommitted changes[/]")
-        console.print("    [cyan]git checkout -b claude/test[/]  [dim]# Work on a branch, never main[/]")
-        console.print(f"    [cyan]{config.install_dir}/run.sh .[/]")
-        console.print()
-
-        show_info_box("Network Modes", textwrap.dedent("""
-            [bold]Bridge[/] (default) — Claude has internet access, can push/pull
-              [cyan]alcatraz /path/to/project[/]
-
-            [bold]None[/] (offline) — Claude works locally, you push from host after
-              [cyan]alcatraz /path/to/project none[/]
-        """).strip())
-        console.print()
-
-        show_info_box("Port Modes", textwrap.dedent("""
-            [bold]Deterministic[/] (default) — Hash-based ports, run multiple containers
-              [cyan]alcatraz /path/to/project[/]
-
-            [bold]Fixed[/] — 1:1 mapping (3000:3000), single container only
-              [cyan]alcatraz /path/to/project fixed[/]
-
-            [bold]No ports[/] — No port forwarding at all
-              [cyan]alcatraz /path/to/project noports[/]
-
-            Arguments are order-independent — mix freely.
-        """).strip())
-        console.print()
-
-        if config.is_wsl:
-            show_info_box("WSL", textwrap.dedent("""
-                From WSL bash:
-                  [cyan]alcatraz /mnt/c/path/to/project[/]
-            """).strip())
-            console.print()
-
-        nav = 1 if first_iter and came_from == "back" else 0
-        first_iter = False
-        result = step_menu([], initial_nav=nav)
-
-        if result == "back":
-            return "back"
-        config.mark_complete(11)
-        return "next"
-
-
-# ══════════════════════════════════════════════════════════════════
-#  STEP 14 — INSTALL GLOBAL LAUNCHER
+#  STEP 13 — INSTALL GLOBAL LAUNCHER
 # ══════════════════════════════════════════════════════════════════
 
 def step_install_launcher(config: SetupConfig, came_from="next"):
@@ -3178,7 +3189,7 @@ def step_install_launcher(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(15, TOTAL_STEPS, "Install Global Launcher",
+        show_step_header(14, TOTAL_STEPS, "Install Global Launcher",
                          "Add the 'alcatraz' command to your PATH for easy access")
 
         wrapper_src = os.path.join(config.install_dir, "alcatraz")
@@ -3204,21 +3215,11 @@ def step_install_launcher(config: SetupConfig, came_from="next"):
             console.print(f"  [green]✓[/] [cyan]alcatraz[/] is already on your PATH: [dim]{existing}[/]")
             console.print()
 
-        show_info_box("How It Works", textwrap.dedent(f"""
-            A symlink is created at [cyan]~/.local/bin/alcatraz[/] pointing to
-            [cyan]{config.install_dir}/alcatraz[/].
-
-            If [cyan]~/.local/bin[/] isn't in your PATH yet, the wizard will
-            add it to your shell config ([cyan]~/.bashrc[/] / [cyan]~/.zshrc[/]).
-        """).strip())
-        console.print()
-
         choices = []
         if not already_installed:
-            choices.append(("Install alcatraz to PATH (recommended)", "install"))
+            choices.append(("Attach symlink", "install"))
         else:
             choices.append(("Reinstall / update symlink", "install"))
-        choices.append(("Skip — I'll use the full path", "skip"))
 
         nav = 1 if first_iter and came_from == "back" else 0
         first_iter = False
@@ -3295,7 +3296,7 @@ def _do_install_launcher(config: SetupConfig, wrapper_src: str, local_bin: str, 
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 15 — DAILY WORKFLOW & COMPLETE
+#  STEP 14 — DAILY WORKFLOW & COMPLETE
 # ══════════════════════════════════════════════════════════════════
 
 def step_daily_workflow(config: SetupConfig, came_from="next"):
@@ -3304,7 +3305,7 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(16, TOTAL_STEPS, "Daily Workflow",
+        show_step_header(15, TOTAL_STEPS, "Daily Workflow",
                          "How to use Claude Code safely every day")
 
         console.print("  [bold underline]Starting a Session[/]")
@@ -3352,12 +3353,11 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
         # Final completion panel
         console.print(Panel(
             Align.center(
-                Text("Setup Complete!", style="bold green") +
-                Text("\n\nYour Alcatraz environment is fully configured.\n", style="white") +
-                Text("All safety layers are in place:\n", style="white") +
-                Text("  Docker isolation + PAT scoping + Git Guardian\n", style="cyan") +
-                Text("  Branch protection + Deny list + PreToolUse hook\n\n", style="cyan") +
-                Text("Launch:  alcatraz /path/to/project\n", style="bold cyan")
+                Text("Setup Complete!\n\n", style="bold green", justify="center") +
+                Text("Your Alcatraz environment is fully configured.\n", style="white", justify="center") +
+                Text("All safety layers are in place:\n\n", style="white", justify="center") +
+                Text("Docker isolation + PAT scoping + Git Guardian\n", style="cyan", justify="center") +
+                Text("Branch protection + Deny list + PreToolUse hook\n", style="cyan", justify="center")
             ),
             border_style="green",
             box=box.DOUBLE,
@@ -3370,7 +3370,7 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
 
         if result == "back":
             return "back"
-        config.mark_complete(12)
+        config.mark_complete(11)
         return "next"
 
 
@@ -3427,9 +3427,8 @@ def main():
         step_claude_auth,           # 10 — Step 11: Claude authentication
         step_project_settings,      # 11 — Step 12: Project settings (.claude/)
         step_branch_protection,     # 12 — Step 13: Branch protection
-        step_first_launch,          # 13 — Step 14: First launch
-        step_install_launcher,      # 14 — Step 15: Install global launcher
-        step_daily_workflow,        # 15 — Step 16: Daily workflow & complete
+        step_install_launcher,      # 13 — Step 14: Install global launcher
+        step_daily_workflow,        # 14 — Step 15: Daily workflow & complete
     ]
 
     current = 0
