@@ -2841,6 +2841,47 @@ def step_docker_build(config: SetupConfig, came_from="next"):
 #  STEP 10 — CLAUDE AUTHENTICATION
 # ══════════════════════════════════════════════════════════════════
 
+def _run_oauth_auth(config: SetupConfig):
+    """Execute auth.sh interactively for OAuth login."""
+    clear_screen()
+    show_banner()
+    show_step_header(11, TOTAL_STEPS, "Authenticate Claude Code",
+                     "Running OAuth login…")
+    console.print()
+    console.print("  [dim]A browser window will open. Complete the login,\n"
+                  "  then type [cyan]/exit[/cyan] in the terminal.[/dim]")
+    console.print()
+
+    auth_script = os.path.join(config.install_dir, "auth.sh")
+    if not os.path.isfile(auth_script):
+        console.print(f"  [bold red]✗ Auth script not found:[/] [cyan]{auth_script}[/]")
+        console.print("  [dim]Go back to Step 7 (Review & Generate) to generate files first.[/]")
+        console.print()
+        pause()
+        return
+
+    try:
+        proc = subprocess.run(
+            ["bash", auth_script],
+            cwd=config.install_dir,
+        )
+        if proc.returncode == 0:
+            console.print()
+            console.print("  [bold green]✓ Authentication completed![/]")
+        else:
+            console.print()
+            console.print(f"  [yellow]Auth script exited with code {proc.returncode}[/]")
+            console.print(f"  [dim]You can retry or run manually: {auth_script}[/]")
+    except KeyboardInterrupt:
+        console.print(f"\n  [yellow]Auth cancelled. You can retry or run manually: {auth_script}[/]")
+    except Exception as e:
+        console.print(f"\n  [red]✗ Auth error: {e}[/]")
+        console.print(f"  [dim]You can run manually: {auth_script}[/]")
+
+    console.print()
+    pause()
+
+
 def step_claude_auth(config: SetupConfig, came_from="next"):
     """Guide through Claude Code OAuth authentication."""
     first_iter = True
@@ -2852,64 +2893,70 @@ def step_claude_auth(config: SetupConfig, came_from="next"):
 
         # Check if already authenticated
         creds_path = os.path.expanduser("~/.claude/.credentials.json")
-        already_auth = os.path.isfile(creds_path)
+        api_key_path = os.path.expanduser("~/.alcatraz-anthropic-key")
+        if config.auth_method == "oauth":
+            already_auth = os.path.isfile(creds_path)
+            check_path = creds_path
+        else:
+            already_auth = os.path.isfile(api_key_path)
+            check_path = api_key_path
 
         if already_auth:
-            console.print("  [green]✓[/] Already authenticated — credentials found at:")
-            console.print(f"    [cyan]{creds_path}[/]")
+            console.print(f"  [green]✓[/] Already authenticated — credentials found at:")
+            console.print(f"    [cyan]{check_path}[/]")
             console.print()
         else:
-            console.print("  [dim]○[/] Not yet authenticated")
+            console.print(f"  [dim]○[/] Not yet authenticated")
+            console.print(f"    Expected: [cyan]{check_path}[/]")
             console.print()
 
         if config.auth_method == "oauth":
-            console.print("  [bold cyan]── OAuth Authentication ──[/]")
-            console.print()
-            console.print("  Claude Code authenticates via OAuth (browser-based login).")
-            console.print("  After building the image, run the generated auth script:")
-            console.print()
-            console.print(f"     [cyan]cd {config.install_dir} && ./auth.sh[/]")
-            console.print()
-            console.print("  This will open a browser window — complete the login,")
-            console.print("  then type [cyan]/exit[/] in the terminal.")
-            console.print()
-            console.print("  [bold cyan]──────────────────────────[/]")
+            show_info_box("OAuth Authentication", textwrap.dedent("""
+                Claude Code authenticates via OAuth (browser-based login).
+
+                This will open a browser window — complete the login,
+                then type [cyan]/exit[/] in the terminal.
+            """).strip())
         else:
-            console.print("  [bold cyan]── API Key Authentication ──[/]")
-            console.print()
-            console.print("  If using an Anthropic API key instead of OAuth:")
-            console.print()
-            console.print("  [bold]1.[/] Store your key:")
-            console.print("     [cyan]echo 'sk-ant-xxxxx' > ~/.alcatraz-anthropic-key[/]")
-            console.print()
-            console.print("  [bold]2.[/] Uncomment the API key section in [cyan]run.sh[/]:")
-            console.print("     Find the [dim]ANTHROPIC_API_KEY_FILE[/] lines and uncomment them.")
-            console.print()
-            console.print("  The key will be injected into the container at launch.")
-            console.print()
-            console.print("  [bold cyan]─────────────────────────────[/]")
+            show_info_box("API Key Authentication", textwrap.dedent("""
+                Store your Anthropic API key:
+                  [cyan]echo 'sk-ant-xxxxx' > ~/.alcatraz-anthropic-key[/]
+
+                The key will be injected into the container at launch.
+            """).strip())
 
         console.print()
 
+        choices = []
+        if config.auth_method == "oauth":
+            if already_auth:
+                choices.append(("Re-run OAuth login", "auth"))
+            else:
+                choices.append(("Run OAuth login", "auth"))
+
         nav = 1 if first_iter and came_from == "back" else 0
         first_iter = False
-        result = step_menu([], initial_nav=nav)
+        result = step_menu(choices, initial_nav=nav)
 
         if result == "back":
             return "back"
-        if not already_auth:
-            console.print()
-            console.print("  [bold red]⚠  Cannot continue — Claude Code not authenticated[/]")
-            console.print(f"    Required: [cyan]{creds_path}[/]")
-            console.print()
-            if config.auth_method == "oauth":
-                console.print(f"  [dim]Run [cyan]{config.install_dir}/auth.sh[/dim] to complete OAuth login first.[/]")
-            else:
-                console.print(f"  [dim]Store your API key in [cyan]~/.alcatraz-anthropic-key[/dim] first.[/]")
-            pause()
-            continue
-        config.mark_complete(8)
-        return "next"
+        if result == "next":
+            if not already_auth:
+                console.print()
+                console.print("  [bold red]⚠  Cannot continue — Claude Code not authenticated[/]")
+                console.print(f"    Required: [cyan]{check_path}[/]")
+                console.print()
+                if config.auth_method == "oauth":
+                    console.print("  [dim]Use 'Run OAuth login' above to authenticate first.[/]")
+                else:
+                    console.print("  [dim]Store your API key in [cyan]~/.alcatraz-anthropic-key[/dim] first.[/]")
+                pause()
+                continue
+            config.mark_complete(8)
+            return "next"
+
+        # result == "auth"
+        _run_oauth_auth(config)
 
 
 # ══════════════════════════════════════════════════════════════════
