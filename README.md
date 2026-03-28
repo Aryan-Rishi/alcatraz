@@ -4,7 +4,7 @@
 
 # Alcatraz
 
-An overlay for using bypass permissions/skip-permissions dangerously Claude Code with Docker, Git Guardian protection, security layers, and team-safe defaults.
+An overlay for using bypass permissions/`--dangerously-skip-permissions` in Claude Code with Docker, Git Guardian protection, security layers, and team-safe defaults.
 
 ---
 
