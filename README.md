@@ -45,7 +45,7 @@ By using this software, you acknowledge these limitations and accept responsibil
 
 **Windows:** Double-click `windowsInstall.bat` from File Explorer. This launches the wizard automatically via WSL.
 
-The wizard handles everything else — 16 guided steps from configuration through to first launch.
+The wizard handles everything else — 15 guided steps from configuration through to first launch.
 
 ## What It Does
 
@@ -64,9 +64,8 @@ The wizard handles everything else — 16 guided steps from configuration throug
 | 11. Claude Auth | One-time OAuth login for Claude Code |
 | 12. Project Settings | Deploy `.claude/settings.json` to your project |
 | 13. Branch Protection | Import the included branch ruleset into GitHub |
-| 14. First Launch | Launch Alcatraz for the first time |
-| 15. Install Launcher | Add `alcatraz` command to PATH |
-| 16. Daily Workflow | Usage patterns and maintenance tips |
+| 14. Install Launcher | Add `alcatraz` command to PATH |
+| 15. Daily Workflow | Usage patterns and maintenance tips |
 
 If you exit early after Step 7, you can complete the remaining steps manually:
 
@@ -254,6 +253,44 @@ docker run -it --rm \
     --memory 8g \
     --cpus 4 \
     # ... rest of the flags
+```
+
+## Launch Modes
+
+The `alcatraz` command accepts optional arguments for network and port modes. Arguments are order-independent — mix them freely.
+
+### Network modes
+
+| Mode | Command | Behaviour |
+|------|---------|-----------|
+| **Bridge** (default) | `alcatraz /path/to/project` | Claude has internet access — can push, pull, install packages |
+| **None** (offline) | `alcatraz /path/to/project none` | Claude works locally only — you push from the host after reviewing |
+
+### Port modes
+
+| Mode | Command | Behaviour | Parallel safe? |
+|------|---------|-----------|----------------|
+| **Deterministic** (default) | `alcatraz /path/to/project` | Hash-based host ports — run multiple containers without conflicts | Yes |
+| **Fixed** | `alcatraz /path/to/project fixed` | 1:1 mapping (3000→3000, 5173→5173) — single container only | No |
+| **No ports** | `alcatraz /path/to/project noports` | No port forwarding at all | Yes |
+
+### Combining modes
+
+```bash
+alcatraz                                # Current dir, bridge network, deterministic ports
+alcatraz /path/to/project               # Explicit path, same defaults
+alcatraz /path/to/project none          # Offline, deterministic ports
+alcatraz /path/to/project fixed         # Bridge network, fixed ports
+alcatraz . fixed none                   # Current dir, offline, fixed ports
+alcatraz . noports                      # Current dir, no port forwarding
+```
+
+### WSL
+
+From WSL bash, pass the `/mnt/c/...` path:
+
+```bash
+alcatraz /mnt/c/Users/you/projects/my-project
 ```
 
 ## Multiple Projects

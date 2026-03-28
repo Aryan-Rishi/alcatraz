@@ -55,7 +55,7 @@ except ImportError:
 # ── Globals ───────────────────────────────────────────────────────
 console = Console()
 VERSION = "1.1.0"
-TOTAL_STEPS = 16
+TOTAL_STEPS = 15
 
 # ── Debug tracing ─────────────────────────────────────────────────
 _DEBUG_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wizard_debug.log")
@@ -3174,85 +3174,7 @@ def step_branch_protection(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 13 — FIRST LAUNCH
-# ══════════════════════════════════════════════════════════════════
-
-def step_first_launch(config: SetupConfig, came_from="next"):
-    """Guide through the first launch of Alcatraz."""
-    first_iter = True
-    while True:
-        clear_screen()
-        show_banner()
-        show_step_header(14, TOTAL_STEPS, "First Launch",
-                         "Launch Alcatraz for the first time")
-
-        # Check if Docker image exists
-        image_found = False
-        try:
-            check = subprocess.run(
-                ["docker", "images", "-q", "alcatraz:latest"],
-                capture_output=True, text=True, timeout=10
-            )
-            image_found = bool(check.stdout.strip())
-        except Exception:
-            pass
-
-        if not image_found:
-            console.print("  [bold yellow]⚠  Docker image [cyan]alcatraz:latest[/cyan] not found.[/]")
-            console.print(f"    Run [cyan]{config.install_dir}/build.sh[/] before launching.")
-            console.print()
-
-        console.print("  [bold]Before launching, prepare a project:[/]")
-        console.print()
-        console.print("    [cyan]cd ~/projects/my-project[/]")
-        console.print("    [cyan]git status[/]                  [dim]# Ensure clean working tree[/]")
-        console.print("    [cyan]git stash[/]                   [dim]# Stash uncommitted changes[/]")
-        console.print("    [cyan]git checkout -b claude/test[/]  [dim]# Work on a branch, never main[/]")
-        console.print(f"    [cyan]{config.install_dir}/run.sh .[/]")
-        console.print()
-
-        show_info_box("Network Modes", textwrap.dedent("""
-            [bold]Bridge[/] (default) — Claude has internet access, can push/pull
-              [cyan]alcatraz /path/to/project[/]
-
-            [bold]None[/] (offline) — Claude works locally, you push from host after
-              [cyan]alcatraz /path/to/project none[/]
-        """).strip())
-        console.print()
-
-        show_info_box("Port Modes", textwrap.dedent("""
-            [bold]Deterministic[/] (default) — Hash-based ports, run multiple containers
-              [cyan]alcatraz /path/to/project[/]
-
-            [bold]Fixed[/] — 1:1 mapping (3000:3000), single container only
-              [cyan]alcatraz /path/to/project fixed[/]
-
-            [bold]No ports[/] — No port forwarding at all
-              [cyan]alcatraz /path/to/project noports[/]
-
-            Arguments are order-independent — mix freely.
-        """).strip())
-        console.print()
-
-        if config.is_wsl:
-            show_info_box("WSL", textwrap.dedent("""
-                From WSL bash:
-                  [cyan]alcatraz /mnt/c/path/to/project[/]
-            """).strip())
-            console.print()
-
-        nav = 1 if first_iter and came_from == "back" else 0
-        first_iter = False
-        result = step_menu([], initial_nav=nav)
-
-        if result == "back":
-            return "back"
-        config.mark_complete(11)
-        return "next"
-
-
-# ══════════════════════════════════════════════════════════════════
-#  STEP 14 — INSTALL GLOBAL LAUNCHER
+#  STEP 13 — INSTALL GLOBAL LAUNCHER
 # ══════════════════════════════════════════════════════════════════
 
 def step_install_launcher(config: SetupConfig, came_from="next"):
@@ -3261,7 +3183,7 @@ def step_install_launcher(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(15, TOTAL_STEPS, "Install Global Launcher",
+        show_step_header(14, TOTAL_STEPS, "Install Global Launcher",
                          "Add the 'alcatraz' command to your PATH for easy access")
 
         wrapper_src = os.path.join(config.install_dir, "alcatraz")
@@ -3378,7 +3300,7 @@ def _do_install_launcher(config: SetupConfig, wrapper_src: str, local_bin: str, 
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 15 — DAILY WORKFLOW & COMPLETE
+#  STEP 14 — DAILY WORKFLOW & COMPLETE
 # ══════════════════════════════════════════════════════════════════
 
 def step_daily_workflow(config: SetupConfig, came_from="next"):
@@ -3387,7 +3309,7 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(16, TOTAL_STEPS, "Daily Workflow",
+        show_step_header(15, TOTAL_STEPS, "Daily Workflow",
                          "How to use Claude Code safely every day")
 
         console.print("  [bold underline]Starting a Session[/]")
@@ -3435,12 +3357,11 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
         # Final completion panel
         console.print(Panel(
             Align.center(
-                Text("Setup Complete!", style="bold green") +
-                Text("\n\nYour Alcatraz environment is fully configured.\n", style="white") +
-                Text("All safety layers are in place:\n", style="white") +
-                Text("  Docker isolation + PAT scoping + Git Guardian\n", style="cyan") +
-                Text("  Branch protection + Deny list + PreToolUse hook\n\n", style="cyan") +
-                Text("Launch:  alcatraz /path/to/project\n", style="bold cyan")
+                Text("Setup Complete!\n\n", style="bold green", justify="center") +
+                Text("Your Alcatraz environment is fully configured.\n", style="white", justify="center") +
+                Text("All safety layers are in place:\n\n", style="white", justify="center") +
+                Text("Docker isolation + PAT scoping + Git Guardian\n", style="cyan", justify="center") +
+                Text("Branch protection + Deny list + PreToolUse hook\n", style="cyan", justify="center")
             ),
             border_style="green",
             box=box.DOUBLE,
@@ -3453,7 +3374,7 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
 
         if result == "back":
             return "back"
-        config.mark_complete(12)
+        config.mark_complete(11)
         return "next"
 
 
@@ -3510,9 +3431,8 @@ def main():
         step_claude_auth,           # 10 — Step 11: Claude authentication
         step_project_settings,      # 11 — Step 12: Project settings (.claude/)
         step_branch_protection,     # 12 — Step 13: Branch protection
-        step_first_launch,          # 13 — Step 14: First launch
-        step_install_launcher,      # 14 — Step 15: Install global launcher
-        step_daily_workflow,        # 15 — Step 16: Daily workflow & complete
+        step_install_launcher,      # 13 — Step 14: Install global launcher
+        step_daily_workflow,        # 14 — Step 15: Daily workflow & complete
     ]
 
     current = 0
