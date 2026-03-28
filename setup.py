@@ -3314,6 +3314,7 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
         console.print()
         console.print("    [cyan]cd ~/projects/my-project[/]")
         console.print("    [cyan]git checkout -b claude/feature-xyz[/]   [dim]# Always use a branch[/]")
+        console.print("    [cyan]git pull origin main[/]                  [dim]# Sync latest from main[/]")
         console.print("    [cyan]alcatraz[/]                              [dim]# Launch on current dir[/]")
         console.print()
 
@@ -3321,7 +3322,7 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
         console.print()
         console.print("    [cyan]git log --oneline -10[/]       [dim]# Review what Claude committed[/]")
         console.print("    [cyan]git diff main..HEAD[/]         [dim]# Full diff against main[/]")
-        console.print("    [cyan]gh pr create --base main[/]    [dim]# Open a PR for review[/]")
+        console.print("    [cyan]gh pr create --base main --head claude/feature-xyz --title \"PR title\" --body \" \"[/]  [dim]# Open a PR for review[/]")
         console.print()
 
         console.print("  [bold underline]Secrets Safety[/]")
