@@ -2,9 +2,9 @@
   <img src="banner.svg" alt="Alcatraz" width="700">
 </p>
 
-# Alcatraz Setup Wizard
+# Alcatraz
 
-An interactive setup wizard for configuring Dockerized Claude Code with Git Guardian protection, security layers, and team-safe defaults.
+An overlay for using bypass permissions/skip-permissions dangerously Claude Code with Docker, Git Guardian protection, security layers, and team-safe defaults.
 
 ---
 
