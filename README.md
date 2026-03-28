@@ -20,6 +20,71 @@ By using this software, you acknowledge these limitations and accept responsibil
 
 ---
 
+## Security Architecture
+
+Alcatraz uses a layered security model. No single layer is sufficient on its own — they work together to constrain what Claude can do.
+
+| Layer | What It Protects | Enforcement Level |
+|-------|-----------------|-------------------|
+| **Docker container** | Host filesystem isolation | OS-level (kernel) |
+| **PAT scoping** | GitHub permissions (contents only, no admin) | Server-side (GitHub) |
+| **Branch protection** | Protected branches via `branch-ruleset.json` | Server-side (GitHub) |
+| **Git Guardian** | Dangerous git commands (force push, branch delete, hard reset) | Binary wrapper (container) |
+| **settings.json deny list** | Blocked command patterns | Application (Claude Code) |
+| **PreToolUse hook** | Additional command filtering | Application (Claude Code) |
+| **Resource limits** | CPU and memory caps (optional) | OS-level (Docker cgroups) |
+
+### How the token is protected
+
+The GitHub PAT is stored on the host at `~/.alcatraz-token` with `600` permissions. At container launch, it is written to a root-owned file inside the container (`/root/.git-credentials`). The `node` user (which Claude runs as) cannot read this file directly. Git accesses the token through a credential helper that runs via a restricted `sudo` rule — limited to exactly the commands needed for credential retrieval.
+
+The PreToolUse hook blocks direct attempts to read the credential file, and the container's sudoers policy restricts `sudo` to a fixed set of commands (no general-purpose root access).
+
+### What Claude can and cannot do
+
+| Action | Allowed? | Why |
+|--------|----------|-----|
+| Read/write files in the mounted project | Yes | This is the intended workflow |
+| Push to feature branches | Yes | Normal development workflow |
+| Force push to any branch | Blocked | Git Guardian prompts for confirmation |
+| Push to protected branches | Blocked | Git Guardian + GitHub branch protection |
+| Delete remote branches | Blocked | Git Guardian prompts for confirmation |
+| Access the raw GitHub token | Blocked | Root-owned file + restricted sudo + PreToolUse hook |
+| Access host filesystem outside the mount | Blocked | Docker container isolation |
+| Install system packages | Blocked | No general sudo access |
+| Access the network (optional) | Configurable | Launch with `none` for full network isolation |
+
+### Branch ruleset
+
+The generated `branch-ruleset.json` is the recommended way to protect your default branch. Import it on each repo to enforce server-side rules that Claude cannot bypass — no direct pushes to main, no force-pushes, no branch deletion.
+
+**To apply it:**
+
+1. Go to your repo **Settings → Rules → Rulesets**
+2. Click **New ruleset → Import a ruleset**
+3. Upload `branch-ruleset.json` from your install directory
+4. Review and click **Create**
+
+Repeat for every repo the PAT has access to. The ruleset enforces:
+
+| Rule | Effect |
+|------|--------|
+| Restrict deletions | Default branch cannot be deleted |
+| Block force pushes | History cannot be rewritten |
+| Require pull request | PR required, 0 approvals default (increase to 1+ for teams) |
+
+These are server-side rules — Claude cannot bypass them regardless of what happens inside the container.
+
+### Secrets in your project
+
+The mounted project directory is fully readable by Claude inside the container. If your project contains `.env` files, API keys, or other secrets, Claude can access them. Mitigations:
+
+- **Do not store production secrets in the repo.** Use a secrets manager and only keep `.env.example` templates in git.
+- **Add `.env` to `.gitignore`.**
+- **For sensitive projects**, launch with `--network none` so Claude cannot make outbound connections even if it reads local secrets.
+
+---
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)
@@ -27,7 +92,6 @@ By using this software, you acknowledge these limitations and accept responsibil
 - [Requirements](#requirements)
 - [Generated Files](#generated-files)
 - [Profiles](#profiles)
-- [Security Architecture](#security-architecture)
 - [Daily Workflow](#daily-workflow)
 - [Multiple Projects](#multiple-projects)
 - [Maintenance](#maintenance)
@@ -110,69 +174,6 @@ The wizard creates the following in your chosen install directory:
 | **Full** | ~7-8 GB | Everything + ML packages | ML/Data teams |
 | **Custom** | Varies | You pick each component | Specific needs |
 
-## Security Architecture
-
-Alcatraz uses a layered security model. No single layer is sufficient on its own — they work together to constrain what Claude can do.
-
-| Layer | What It Protects | Enforcement Level |
-|-------|-----------------|-------------------|
-| **Docker container** | Host filesystem isolation | OS-level (kernel) |
-| **PAT scoping** | GitHub permissions (contents only, no admin) | Server-side (GitHub) |
-| **Branch protection** | Protected branches via `branch-ruleset.json` | Server-side (GitHub) |
-| **Git Guardian** | Dangerous git commands (force push, branch delete, hard reset) | Binary wrapper (container) |
-| **settings.json deny list** | Blocked command patterns | Application (Claude Code) |
-| **PreToolUse hook** | Additional command filtering | Application (Claude Code) |
-| **Resource limits** | CPU and memory caps (optional) | OS-level (Docker cgroups) |
-
-### How the token is protected
-
-The GitHub PAT is stored on the host at `~/.alcatraz-token` with `600` permissions. At container launch, it is written to a root-owned file inside the container (`/root/.git-credentials`). The `node` user (which Claude runs as) cannot read this file directly. Git accesses the token through a credential helper that runs via a restricted `sudo` rule — limited to exactly the commands needed for credential retrieval.
-
-The PreToolUse hook blocks direct attempts to read the credential file, and the container's sudoers policy restricts `sudo` to a fixed set of commands (no general-purpose root access).
-
-### What Claude can and cannot do
-
-| Action | Allowed? | Why |
-|--------|----------|-----|
-| Read/write files in the mounted project | Yes | This is the intended workflow |
-| Push to feature branches | Yes | Normal development workflow |
-| Force push to any branch | Blocked | Git Guardian prompts for confirmation |
-| Push to protected branches | Blocked | Git Guardian + GitHub branch protection |
-| Delete remote branches | Blocked | Git Guardian prompts for confirmation |
-| Access the raw GitHub token | Blocked | Root-owned file + restricted sudo + PreToolUse hook |
-| Access host filesystem outside the mount | Blocked | Docker container isolation |
-| Install system packages | Blocked | No general sudo access |
-| Access the network (optional) | Configurable | Launch with `none` for full network isolation |
-
-### Branch ruleset
-
-The generated `branch-ruleset.json` is the recommended way to protect your default branch. Import it on each repo to enforce server-side rules that Claude cannot bypass — no direct pushes to main, no force-pushes, no branch deletion.
-
-**To apply it:**
-
-1. Go to your repo **Settings → Rules → Rulesets**
-2. Click **New ruleset → Import a ruleset**
-3. Upload `branch-ruleset.json` from your install directory
-4. Review and click **Create**
-
-Repeat for every repo the PAT has access to. The ruleset enforces:
-
-| Rule | Effect |
-|------|--------|
-| Restrict deletions | Default branch cannot be deleted |
-| Block force pushes | History cannot be rewritten |
-| Require pull request | PR required, 0 approvals default (increase to 1+ for teams) |
-
-These are server-side rules — Claude cannot bypass them regardless of what happens inside the container.
-
-### Secrets in your project
-
-The mounted project directory is fully readable by Claude inside the container. If your project contains `.env` files, API keys, or other secrets, Claude can access them. Mitigations:
-
-- **Do not store production secrets in the repo.** Use a secrets manager and only keep `.env.example` templates in git.
-- **Add `.env` to `.gitignore`.**
-- **For sensitive projects**, launch with `--network none` so Claude cannot make outbound connections even if it reads local secrets.
-
 ## Daily Workflow
 
 ### Starting a session
@@ -197,6 +198,7 @@ cd ~/projects/my-project
 git status                          # Ensure the working tree is clean
 git stash                           # Stash uncommitted changes, or commit them
 git checkout -b claude/feature-xyz  # Work on a branch, never directly on main
+git pull origin main                # Sync latest from main
 ```
 
 Then launch the container. Claude will see the branch and work on it.
@@ -237,7 +239,7 @@ git diff main..HEAD                 # Full diff against main
 git diff HEAD~3..HEAD               # Last 3 commits only
 
 # Open a PR
-gh pr create --base main --head claude/feature-xyz --title "Feature XYZ"
+gh pr create --base main --head claude/feature-xyz --title "PR title" --body " "
 
 # Or roll back
 git reset --hard HEAD~5             # Undo last 5 commits
