@@ -392,7 +392,9 @@ docker exec <container-name> tail -f /tmp/git-guardian.log
 echo 'github_pat_...' > ~/.alcatraz-token         # Rotate PAT
 echo 'YYYY-MM-DD' > ~/.alcatraz-token-expiry      # Update expiry
 docker image prune -f                              # Clean up images
-ln -sf <install-dir>/alcatraz ~/.local/bin/alcatraz # Manual launcher install
+ln -sf <install-dir>/alcatraz ~/.local/bin/alcatraz # Symlink launcher to PATH
+# If ~/.local/bin isn't in PATH, add to your shell config:
+# echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
 ## Troubleshooting

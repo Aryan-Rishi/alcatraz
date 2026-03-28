@@ -3068,7 +3068,11 @@ def step_project_settings(config: SetupConfig, came_from="next"):
             padding=(1, 2),
         )
 
-        console.print(Padding(Columns([layer_table, limitation_panel], padding=0), (0, 2)))
+        side_by_side = Table(box=None, show_header=False, padding=(0, 2))
+        side_by_side.add_column(vertical="top")
+        side_by_side.add_column(vertical="top")
+        side_by_side.add_row(layer_table, Padding(limitation_panel, (1, 0, 0, 0)))
+        console.print(Padding(side_by_side, (0, 2)))
         console.print()
 
         if config.enable_deny_list or config.enable_pretool_hook:
@@ -3147,9 +3151,6 @@ def step_branch_protection(config: SetupConfig, came_from="next"):
         rule_table.add_row("Require pull request", "1 approval required — no direct pushes")
         rule_table.add_row("Dismiss stale reviews", "Re-approval required after new commits")
         rule_table.add_row("Bypass actors", "None — rules apply to everyone")
-        console.print(Padding(rule_table, (0, 2)))
-
-        console.print()
 
         # Optional extras (manual)
         opt_table = Table(title="Optional — Add Manually After Import", box=box.ROUNDED,
@@ -3159,7 +3160,12 @@ def step_branch_protection(config: SetupConfig, came_from="next"):
         opt_table.add_row("Require status checks", "If you have CI/CD tests configured")
         opt_table.add_row("Require linear history", "Team preference — cleaner git log")
         opt_table.add_row("Require signed commits", "High security environments only")
-        console.print(Padding(opt_table, (0, 2)))
+
+        side_by_side = Table(box=None, show_header=False, padding=(0, 2))
+        side_by_side.add_column(vertical="top")
+        side_by_side.add_column(vertical="top")
+        side_by_side.add_row(rule_table, opt_table)
+        console.print(Padding(side_by_side, (0, 2)))
 
         console.print()
 
@@ -3209,21 +3215,11 @@ def step_install_launcher(config: SetupConfig, came_from="next"):
             console.print(f"  [green]✓[/] [cyan]alcatraz[/] is already on your PATH: [dim]{existing}[/]")
             console.print()
 
-        show_info_box("How It Works", textwrap.dedent(f"""
-            A symlink is created at [cyan]~/.local/bin/alcatraz[/] pointing to
-            [cyan]{config.install_dir}/alcatraz[/].
-
-            If [cyan]~/.local/bin[/] isn't in your PATH yet, the wizard will
-            add it to your shell config ([cyan]~/.bashrc[/] / [cyan]~/.zshrc[/]).
-        """).strip())
-        console.print()
-
         choices = []
         if not already_installed:
-            choices.append(("Install alcatraz to PATH (recommended)", "install"))
+            choices.append(("Attach symlink", "install"))
         else:
             choices.append(("Reinstall / update symlink", "install"))
-        choices.append(("Skip — I'll use the full path", "skip"))
 
         nav = 1 if first_iter and came_from == "back" else 0
         first_iter = False
