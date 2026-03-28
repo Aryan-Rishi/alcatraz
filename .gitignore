@@ -27,6 +27,7 @@ alcatraz
 # Claude Code
 CLAUDE.md
 .mcp.json
+.claude/commands/
 
 # Other files
 OtherFiles/

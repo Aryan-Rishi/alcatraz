@@ -2126,8 +2126,9 @@ def generate_branch_ruleset() -> str:
 
     This ruleset protects the default branch with the same rules shown in the
     Branch Protection wizard step: no deletions, no force-pushes, and pull
-    requests required with at least one approval.  Users import this file
-    directly via Settings → Rules → Rulesets → New → Import a ruleset.
+    requests required with zero approvals (solo-friendly default).  Users
+    import this file directly via Settings → Rules → Rulesets → New →
+    Import a ruleset.  Teams should increase required approvals to 1+.
     """
     ruleset = {
         "name": "main",
@@ -2145,7 +2146,7 @@ def generate_branch_ruleset() -> str:
             {
                 "type": "pull_request",
                 "parameters": {
-                    "required_approving_review_count": 1,
+                    "required_approving_review_count": 0,
                     "dismiss_stale_reviews_on_push": True,
                     "required_reviewers": [],
                     "require_code_owner_review": False,
@@ -3148,7 +3149,7 @@ def step_branch_protection(config: SetupConfig, came_from="next"):
         rule_table.add_row("Target", 'Default branch (main/master)')
         rule_table.add_row("Restrict deletions", "Cannot delete the protected branch")
         rule_table.add_row("Block force pushes", "Cannot rewrite history on protected branch")
-        rule_table.add_row("Require pull request", "1 approval required — no direct pushes")
+        rule_table.add_row("Require pull request", "PR required, 0 approvals (solo-friendly)")
         rule_table.add_row("Dismiss stale reviews", "Re-approval required after new commits")
         rule_table.add_row("Bypass actors", "None — rules apply to everyone")
 
@@ -3157,6 +3158,7 @@ def step_branch_protection(config: SetupConfig, came_from="next"):
                           border_style="dim cyan")
         opt_table.add_column("Setting", style="bold")
         opt_table.add_column("When to Enable")
+        opt_table.add_row("Required approvals → 1+", "If working in a team (recommended)")
         opt_table.add_row("Require status checks", "If you have CI/CD tests configured")
         opt_table.add_row("Require linear history", "Team preference — cleaner git log")
         opt_table.add_row("Require signed commits", "High security environments only")
