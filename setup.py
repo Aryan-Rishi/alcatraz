@@ -800,17 +800,18 @@ def step_profile(config: SetupConfig, came_from="next"):
         if show_best_for:
             table.add_column("Best For", style="dim")
 
+        star = lambda p: "⭐ " if config.profile == p else "   "
         rows = [
-            ("⭐ Recommended", "~4–5 GB",
+            (f"{star('recommended')}Recommended", "~4–5 GB",
              "Core tools, GitHub CLI, Cloud CLIs, Infra, Browser, DB clients",
              "Most web/backend teams"),
-            ("Minimal", "~1.5–2 GB",
+            (f"{star('minimal')}Minimal", "~1.5–2 GB",
              "Core tools, GitHub CLI only",
              "Quick start, limited disk"),
-            ("Full", "~7–8 GB",
+            (f"{star('full')}Full", "~7–8 GB",
              "Everything + ML/Data Science packages (CPU)",
              "ML engineers, data teams"),
-            ("Custom", "Varies",
+            (f"{star('custom')}Custom", "Varies",
              "You pick each component",
              "Specific requirements"),
         ]
@@ -840,13 +841,14 @@ def step_profile(config: SetupConfig, came_from="next"):
 
         _dbg(f"[step_profile] falling through to EDIT (result was {result!r})")
         # result == "edit"
+        sel = lambda p: "⭐" if config.profile == p else "  "
         profile = questionary.select(
             "Select a profile:",
             choices=[
-                questionary.Choice("⭐ Recommended  — Core + Cloud + Infra + Browser", value="recommended"),
-                questionary.Choice("   Minimal      — Core + GitHub CLI only", value="minimal"),
-                questionary.Choice("   Full         — Everything including ML packages", value="full"),
-                questionary.Choice("   Custom       — Choose each component", value="custom"),
+                questionary.Choice(f"{sel('recommended')} Recommended  — Core + Cloud + Infra + Browser", value="recommended"),
+                questionary.Choice(f"{sel('minimal')} Minimal      — Core + GitHub CLI only", value="minimal"),
+                questionary.Choice(f"{sel('full')} Full         — Everything including ML packages", value="full"),
+                questionary.Choice(f"{sel('custom')} Custom       — Choose each component", value="custom"),
             ],
             style=q_style,
         ).ask()
@@ -2661,8 +2663,15 @@ def step_token_storage(config: SetupConfig, came_from="next"):
         if result == "back":
             return "back"
         if result == "next":
-            if token_exists:
-                config.mark_complete(6)
+            if not token_exists:
+                console.print()
+                console.print("  [bold red]⚠  Cannot continue — GitHub token not stored[/]")
+                console.print(f"    Required: [cyan]{token_path}[/]")
+                console.print()
+                console.print("  [dim]Use 'Store token now' to save your PAT first.[/]")
+                pause()
+                continue
+            config.mark_complete(6)
             return "next"
         # result == "store"
         _store_token(config)
@@ -2718,6 +2727,22 @@ def step_docker_build(config: SetupConfig, came_from="next"):
         if result == "back":
             return "back"
         if result == "next":
+            try:
+                check = subprocess.run(
+                    ["docker", "images", "-q", "alcatraz:latest"],
+                    capture_output=True, text=True, timeout=10
+                )
+                image_exists = bool(check.stdout.strip())
+            except Exception:
+                image_exists = False
+            if not image_exists:
+                console.print()
+                console.print("  [bold red]⚠  Cannot continue — Docker image not built[/]")
+                console.print("    Required: [cyan]alcatraz:latest[/]")
+                console.print()
+                console.print("  [dim]Use 'Build now' to create the Docker image first.[/]")
+                pause()
+                continue
             return "next"
 
         # result == "build"
@@ -2872,6 +2897,17 @@ def step_claude_auth(config: SetupConfig, came_from="next"):
 
         if result == "back":
             return "back"
+        if not already_auth:
+            console.print()
+            console.print("  [bold red]⚠  Cannot continue — Claude Code not authenticated[/]")
+            console.print(f"    Required: [cyan]{creds_path}[/]")
+            console.print()
+            if config.auth_method == "oauth":
+                console.print(f"  [dim]Run [cyan]{config.install_dir}/auth.sh[/dim] to complete OAuth login first.[/]")
+            else:
+                console.print(f"  [dim]Store your API key in [cyan]~/.alcatraz-anthropic-key[/dim] first.[/]")
+            pause()
+            continue
         config.mark_complete(8)
         return "next"
 
