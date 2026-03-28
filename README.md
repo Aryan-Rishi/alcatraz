@@ -161,7 +161,7 @@ Repeat for every repo the PAT has access to. The ruleset enforces:
 |------|--------|
 | Restrict deletions | Default branch cannot be deleted |
 | Block force pushes | History cannot be rewritten |
-| Require pull request | 1 approval required, stale reviews dismissed |
+| Require pull request | PR required, 0 approvals default (increase to 1+ for teams) |
 
 These are server-side rules — Claude cannot bypass them regardless of what happens inside the container.
 
