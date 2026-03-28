@@ -38,10 +38,12 @@ By using this software, you acknowledge these limitations and accept responsibil
 
 ## Quick Start
 
+**Linux / macOS:**
 ```bash
-chmod +x install.sh
 ./install.sh
 ```
+
+**Windows:** Double-click `windowsInstall.bat` from File Explorer. This launches the wizard automatically via WSL.
 
 The wizard handles everything else — 16 guided steps from configuration through to first launch.
 

@@ -29,7 +29,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo ""
 echo -e "${CYAN}${BOLD}"
 echo "  ╔══════════════════════════════════════════════════╗"
-echo "  ║       Alcatraz Setup Wizard  v1.1.0             ║"
+echo "  ║       Alcatraz Setup Wizard  v1.1.0              ║"
 echo "  ╚══════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
