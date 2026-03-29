@@ -55,7 +55,8 @@ except ImportError:
 # ── Globals ───────────────────────────────────────────────────────
 console = Console()
 VERSION = "1.1.0"
-TOTAL_STEPS = 15
+TOTAL_STEPS = 14
+QUICK_TOTAL_STEPS = 6
 
 # ── Debug tracing ─────────────────────────────────────────────────
 _DEBUG_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wizard_debug.log")
@@ -149,6 +150,9 @@ class SetupConfig:
     pat_type: str = "fine-grained"  # fine-grained | classic
     # Claude auth
     auth_method: str = "oauth"  # oauth | api_key
+    # Install mode
+    install_mode: str = "manual"  # quick | manual
+    step_display_overrides: dict = field(default_factory=dict)
     # OS detected
     os_type: str = ""
     is_wsl: bool = False
@@ -715,6 +719,7 @@ def step_install_dir(config: SetupConfig, came_from="next"):
             if not config.install_dir:
                 config.install_dir = default_dir
             config.mark_complete(0)
+            _choose_install_mode(config)
             return result
 
         # result == "edit"
@@ -771,6 +776,34 @@ def step_install_dir(config: SetupConfig, came_from="next"):
         if valid:
             config.install_dir = expanded
             config.mark_complete(0)
+
+
+# ── Install-mode chooser (called at end of step_install_dir) ─────
+
+def _choose_install_mode(config: SetupConfig):
+    """Let the user pick Quick Install or Manual Install."""
+    console.print()
+    console.print("  [bold]How would you like to configure Alcatraz?[/]")
+    console.print()
+
+    choice = questionary.select(
+        "",
+        choices=[
+            questionary.Choice(
+                "Quick Install  --  Recommended defaults, minimal setup",
+                value="quick",
+            ),
+            questionary.Choice(
+                "Manual Install  --  Configure every option individually",
+                value="manual",
+            ),
+        ],
+        default="quick",
+        style=q_style,
+    ).ask()
+    if choice is None:
+        sys.exit(0)
+    config.install_mode = choice
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -2130,113 +2163,15 @@ exec "$RUN_SCRIPT" "$@"
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 6 — REVIEW & GENERATE
+#  FILE GENERATION HELPER
 # ══════════════════════════════════════════════════════════════════
 
-def step_review_and_generate(config: SetupConfig, came_from="next"):
-    show_step_header(7, TOTAL_STEPS, "Review & Generate",
-                     "Confirm your choices and generate all configuration files")
+def _generate_files(config: SetupConfig):
+    """Generate all configuration files to install_dir.
 
-    # ── Validation gate — check all steps are complete ──
-    missing = config.incomplete_steps()
-    if missing:
-        console.print("  [bold red]⚠  Cannot generate — the following steps are incomplete:[/]\n")
-        for idx in missing:
-            console.print(f"    [red]○[/] Step {idx + 2}: {config.STEP_NAMES[idx]}")
-        console.print()
-        console.print("  [dim]Go back and complete the incomplete steps, then return here.[/]")
-        console.print()
-
-        action = questionary.select(
-            "",
-            choices=[
-                questionary.Choice("← Go back to complete steps", value="__back__"),
-            ],
-            style=q_style,
-        ).ask()
-        if action is None:
-            sys.exit(0)
-        return "back"
-
-    # Summary table
-    summary_w = min(console.width - 6, 100)
-    table = Table(title="Configuration Summary", box=box.ROUNDED,
-                  border_style="cyan", show_header=True, header_style="bold white",
-                  padding=(0, 2), title_style="bold cyan", width=summary_w)
-    table.add_column("Setting", style="bold", no_wrap=True)
-    table.add_column("Value")
-
-    table.add_row("Install directory", config.install_dir)
-
-    # Profile + components
-    components = []
-    if config.include_github_cli: components.append("GitHub CLI")
-    if config.include_docker_cli: components.append("Docker CLI")
-    if config.include_cloud_clis: components.append("Cloud CLIs")
-    if config.include_infra_tools: components.append("Terraform/kubectl")
-    if config.include_db_clients: components.append("DB clients")
-    if config.include_ml_packages: components.append("ML packages")
-    comp_str = ", ".join(components) if components else "Core only"
-    table.add_row("Profile", f"{config.profile.title()}  ({comp_str})")
-
-    table.add_row("Protected branches", ", ".join(config.protected_branches))
-    table.add_row("Default network", config.default_network)
-
-    port_mode_labels = {
-        "deterministic": "Deterministic (parallel safe)",
-        "fixed": "Fixed 1:1 (single container)",
-        "noports": "None (no forwarding)",
-    }
-    table.add_row("Port mode", port_mode_labels.get(config.port_mode, config.port_mode))
-    if config.port_mode != "noports":
-        all_ports = config.ports + [int(p) for p in config.custom_ports if p.isdigit()]
-        table.add_row("Container ports", ", ".join(str(p) for p in all_ports))
-
-    security_layers = []
-    if config.enable_deny_list: security_layers.append("Deny list")
-    if config.enable_pretool_hook: security_layers.append("PreToolUse hook")
-    if config.enable_session_timeout: security_layers.append(f"Timeout ({config.session_timeout_hours}h)")
-    if config.enable_readonly_hooks: security_layers.append("Read-only hooks")
-    if config.enable_resource_limits: security_layers.append(f"Resources ({config.resource_memory}, {config.resource_cpus} CPUs)")
-    table.add_row("Security layers", ", ".join(security_layers) if security_layers else "None")
-
-    table.add_row("PAT type", config.pat_type.title())
-    table.add_row("Auth method", "OAuth" if config.auth_method == "oauth" else "API Key")
-
-    console.print(Padding(table, (0, 2)))
-    console.print()
-
-    # Files to generate
-    console.print("  [bold]Files that will be created:[/]")
-    console.print(f"  [cyan]  {config.install_dir}/[/]")
-    console.print(f"  [cyan]  ├── Dockerfile[/]")
-    console.print(f"  [cyan]  ├── git-guardian.sh[/]")
-    console.print(f"  [cyan]  ├── run.sh[/]")
-    console.print(f"  [cyan]  ├── alcatraz[/]              [dim](launcher — add to PATH)[/]")
-    if config.enable_pretool_hook:
-        console.print(f"  [cyan]  ├── pretool-hook.sh[/]")
-    if config.enable_deny_list or config.enable_pretool_hook:
-        console.print(f"  [cyan]  ├── settings.json[/]       [dim](copy to project .claude/)[/]")
-    console.print(f"  [cyan]  ├── branch-ruleset.json[/] [dim](import into GitHub rulesets)[/]")
-    console.print(f"  [cyan]  ├── build.sh[/]")
-    console.print(f"  [cyan]  └── auth.sh[/]              [dim](one-time OAuth login)[/]")
-    console.print()
-
-    action = questionary.select(
-        "Ready to generate?",
-        choices=[
-            questionary.Choice("✓ Generate files with these settings", value="generate"),
-            questionary.Choice("← Go back to change settings", value="__back__"),
-        ],
-        style=q_style,
-    ).ask()
-
-    if action is None:
-        sys.exit(0)
-    if action == "__back__":
-        return "back"
-
-    # ── Generate! ──
+    Used by step_review_and_generate (manual mode) and
+    step_quick_generate_and_build (quick mode).
+    """
     install_dir = Path(config.install_dir)
     install_dir.mkdir(parents=True, exist_ok=True)
 
@@ -2371,7 +2306,7 @@ docker run -it --rm \\
 
     except Exception as e:
         console.print()
-        console.print(f"  [red bold]✗ Error generating files:[/] [red]{e}[/]")
+        console.print(f"  [red bold]x Error generating files:[/] [red]{e}[/]")
         console.print(f"  [dim]Directory: {install_dir}[/]")
         console.print()
         import traceback
@@ -2381,6 +2316,181 @@ docker run -it --rm \\
     # ── Brief success ──
     console.print()
     console.print(f"  [bold green]✓[/] All files generated in [cyan]{config.install_dir}[/]")
+    console.print()
+
+
+# ══════════════════════════════════════════════════════════════════
+#  STEP 6 — REVIEW & GENERATE
+# ══════════════════════════════════════════════════════════════════
+
+def step_review_and_generate(config: SetupConfig, came_from="next"):
+    show_step_header(7, TOTAL_STEPS, "Review & Generate",
+                     "Confirm your choices and generate all configuration files")
+
+    # ── Validation gate — check all steps are complete ──
+    missing = config.incomplete_steps()
+    if missing:
+        console.print("  [bold red]⚠  Cannot generate — the following steps are incomplete:[/]\n")
+        for idx in missing:
+            console.print(f"    [red]○[/] Step {idx + 2}: {config.STEP_NAMES[idx]}")
+        console.print()
+        console.print("  [dim]Go back and complete the incomplete steps, then return here.[/]")
+        console.print()
+
+        action = questionary.select(
+            "",
+            choices=[
+                questionary.Choice("← Go back to complete steps", value="__back__"),
+            ],
+            style=q_style,
+        ).ask()
+        if action is None:
+            sys.exit(0)
+        return "back"
+
+    # Summary table
+    summary_w = min(console.width - 6, 100)
+    table = Table(title="Configuration Summary", box=box.ROUNDED,
+                  border_style="cyan", show_header=True, header_style="bold white",
+                  padding=(0, 2), title_style="bold cyan", width=summary_w)
+    table.add_column("Setting", style="bold", no_wrap=True)
+    table.add_column("Value")
+
+    table.add_row("Install directory", config.install_dir)
+
+    # Profile + components
+    components = []
+    if config.include_github_cli: components.append("GitHub CLI")
+    if config.include_docker_cli: components.append("Docker CLI")
+    if config.include_cloud_clis: components.append("Cloud CLIs")
+    if config.include_infra_tools: components.append("Terraform/kubectl")
+    if config.include_db_clients: components.append("DB clients")
+    if config.include_ml_packages: components.append("ML packages")
+    comp_str = ", ".join(components) if components else "Core only"
+    table.add_row("Profile", f"{config.profile.title()}  ({comp_str})")
+
+    table.add_row("Protected branches", ", ".join(config.protected_branches))
+    table.add_row("Default network", config.default_network)
+
+    port_mode_labels = {
+        "deterministic": "Deterministic (parallel safe)",
+        "fixed": "Fixed 1:1 (single container)",
+        "noports": "None (no forwarding)",
+    }
+    table.add_row("Port mode", port_mode_labels.get(config.port_mode, config.port_mode))
+    if config.port_mode != "noports":
+        all_ports = config.ports + [int(p) for p in config.custom_ports if p.isdigit()]
+        table.add_row("Container ports", ", ".join(str(p) for p in all_ports))
+
+    security_layers = []
+    if config.enable_deny_list: security_layers.append("Deny list")
+    if config.enable_pretool_hook: security_layers.append("PreToolUse hook")
+    if config.enable_session_timeout: security_layers.append(f"Timeout ({config.session_timeout_hours}h)")
+    if config.enable_readonly_hooks: security_layers.append("Read-only hooks")
+    if config.enable_resource_limits: security_layers.append(f"Resources ({config.resource_memory}, {config.resource_cpus} CPUs)")
+    table.add_row("Security layers", ", ".join(security_layers) if security_layers else "None")
+
+    table.add_row("PAT type", config.pat_type.title())
+    table.add_row("Auth method", "OAuth" if config.auth_method == "oauth" else "API Key")
+
+    console.print(Padding(table, (0, 2)))
+    console.print()
+
+    # Files to generate
+    console.print("  [bold]Files that will be created:[/]")
+    console.print(f"  [cyan]  {config.install_dir}/[/]")
+    console.print(f"  [cyan]  ├── Dockerfile[/]")
+    console.print(f"  [cyan]  ├── git-guardian.sh[/]")
+    console.print(f"  [cyan]  ├── run.sh[/]")
+    console.print(f"  [cyan]  ├── alcatraz[/]              [dim](launcher — add to PATH)[/]")
+    if config.enable_pretool_hook:
+        console.print(f"  [cyan]  ├── pretool-hook.sh[/]")
+    if config.enable_deny_list or config.enable_pretool_hook:
+        console.print(f"  [cyan]  ├── settings.json[/]       [dim](copy to project .claude/)[/]")
+    console.print(f"  [cyan]  ├── branch-ruleset.json[/] [dim](import into GitHub rulesets)[/]")
+    console.print(f"  [cyan]  ├── build.sh[/]")
+    console.print(f"  [cyan]  └── auth.sh[/]              [dim](one-time OAuth login)[/]")
+    console.print()
+
+    action = questionary.select(
+        "Ready to generate?",
+        choices=[
+            questionary.Choice("✓ Generate files with these settings", value="generate"),
+            questionary.Choice("← Go back to change settings", value="__back__"),
+        ],
+        style=q_style,
+    ).ask()
+
+    if action is None:
+        sys.exit(0)
+    if action == "__back__":
+        return "back"
+
+    # ── Generate! ──
+    _generate_files(config)
+    pause()
+    return "next"
+
+
+# ══════════════════════════════════════════════════════════════════
+#  QUICK STEP 3 — GENERATE FILES + DOCKER BUILD
+# ══════════════════════════════════════════════════════════════════
+
+def step_quick_generate_and_build(config: SetupConfig, came_from="next"):
+    """Quick mode: generate all files with defaults, then build Docker image."""
+    # Pass-through on back so user lands on step_install_dir (can switch modes)
+    if came_from == "back":
+        return "back"
+
+    clear_screen()
+    show_banner()
+    show_step_header(3, QUICK_TOTAL_STEPS, "Generate & Build",
+                     "Generate configuration files and build the Docker image")
+
+    # Bulk-mark config steps 0-4 as complete (using dataclass defaults)
+    for i in range(5):
+        config.mark_complete(i)
+
+    # Show defaults summary
+    console.print("  [bold]Using recommended defaults:[/]")
+    console.print(f"    [bold]Profile:[/]       Recommended (~4-5 GB)")
+    console.print(f"    [bold]Network:[/]       Bridge, deterministic ports (3000, 3001, 5173, 8080)")
+    console.print(f"    [bold]Security:[/]      Deny list + PreToolUse hook")
+    console.print(f"    [bold]Git Guardian:[/]  Protecting main, master, develop, production, release")
+    console.print(f"    [bold]PAT type:[/]      Fine-grained")
+    console.print()
+
+    # Generate files
+    _generate_files(config)
+
+    # Build Docker image
+    console.print("  [bold]Building Docker image[/] [dim](this may take 10-15 minutes)...[/]")
+    console.print()
+
+    if _run_docker_build(config):
+        console.print()
+        pause()
+        return "next"
+
+    # Build failed -- let user retry or skip
+    console.print()
+    action = questionary.select(
+        "",
+        choices=[
+            questionary.Choice("Retry build", value="retry"),
+            questionary.Choice("Skip (run ./build.sh manually later)", value="skip"),
+        ],
+        style=q_style,
+    ).ask()
+    if action is None:
+        sys.exit(0)
+    if action == "retry":
+        if _run_docker_build(config):
+            console.print()
+            pause()
+            return "next"
+    console.print()
+    console.print("  [dim]Run ./build.sh from your install directory when ready.[/]")
     console.print()
     pause()
     return "next"
@@ -2614,6 +2724,206 @@ def step_token_storage(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
+#  QUICK STEP 4 — GITHUB TOKEN (PAT GUIDE + STORAGE)
+# ══════════════════════════════════════════════════════════════════
+
+def step_github_token_combined(config: SetupConfig, came_from="next"):
+    """Quick mode: combined PAT creation guide + token storage."""
+    first_iter = True
+    while True:
+        clear_screen()
+        show_banner()
+        _sn, _st = config.step_display_overrides.get("github_token", (8, TOTAL_STEPS))
+        show_step_header(_sn, _st, "GitHub Token",
+                         "Create and store a GitHub Personal Access Token")
+
+        home = os.path.expanduser("~")
+        token_path = os.path.join(home, ".alcatraz-token")
+        token_exists = os.path.isfile(token_path)
+
+        # Always show PAT creation instructions
+        show_info_box("Fine-Grained PAT -- Step by Step", textwrap.dedent("""
+            [bold]1.[/] Go to [cyan]GitHub -> Settings -> Developer Settings -> Fine-grained tokens[/]
+            [bold]2.[/] Click [bold]Generate new token[/]
+            [bold]3.[/] Configure:
+               [bold]Token name:[/]         alcatraz
+               [bold]Expiration:[/]         30-90 days (rotate regularly)
+               [bold]Resource owner:[/]     Your team org
+               [bold]Repository access:[/]  [cyan]Only select repositories[/] -- pick repos you'll use
+        """).strip())
+
+        console.print()
+
+        # Permissions table
+        half_w = max((console.width - 8) // 2, 40)
+        perm_table = Table(title="Permissions to Grant", box=box.ROUNDED,
+                           border_style="green", width=half_w)
+        perm_table.add_column("Permission", style="bold")
+        perm_table.add_column("Level", style="cyan")
+        perm_table.add_column("Required?")
+        perm_table.add_row("Contents", "Read & Write", "Yes -- push/pull code")
+        perm_table.add_row("Metadata", "Read-only", "Yes -- required by default")
+        perm_table.add_row("Pull requests", "Read & Write", "Optional -- open PRs")
+        perm_table.add_row("Commit statuses", "Read & Write", "Optional -- CI status checks")
+        perm_table.add_row("Issues", "Read & Write", "Optional -- create/close issues")
+        perm_table.add_row("Actions", "Read-only", "Optional -- check CI workflows")
+
+        # Never grant
+        deny_table = Table(title="Never Grant These", box=box.ROUNDED,
+                           border_style="red", width=half_w)
+        deny_table.add_column("Permission", style="bold red")
+        deny_table.add_column("Risk")
+        deny_table.add_row("Administration", "Allows repo deletion and settings changes")
+        deny_table.add_row("Secrets", "Exposes CI/CD API keys and credentials")
+        deny_table.add_row("Workflows (write)", "Can modify CI pipelines to exfiltrate secrets")
+        deny_table.add_row("Actions (write)", "Can trigger/cancel deployment pipelines")
+        deny_table.add_row("Webhooks", "Data exfiltration via arbitrary URLs")
+        deny_table.add_row("Environments", "Controls deployment environment protection")
+        deny_table.add_row("Deployments", "Can bypass CI and deploy directly")
+
+        # Side-by-side layout
+        console.print(Columns([perm_table, deny_table], padding=(0, 2)))
+        console.print()
+
+        show_info_box("Important Warning", textwrap.dedent("""
+            [yellow bold]Do NOT edit an existing fine-grained PAT on GitHub.[/]
+
+            There is a known GitHub bug where editing silently reverts
+            "Only select repositories" back to "All repositories".
+            Instead, [bold]delete and recreate[/] the token when you need changes.
+        """).strip(), style="yellow")
+
+        console.print()
+        console.print("  [bold]Copy the token before leaving the page -- you won't see it again.[/]")
+        console.print()
+
+        # Token status
+        if token_exists:
+            expiry_path = os.path.join(home, ".alcatraz-token-expiry")
+            expiry_str = ""
+            if os.path.isfile(expiry_path):
+                try:
+                    expiry_str = open(expiry_path).read().strip()
+                except Exception:
+                    pass
+            console.print(f"  [green]✓[/] Token stored: [cyan]{token_path}[/]")
+            if expiry_str:
+                console.print(f"    Expiry: [cyan]{expiry_str}[/]")
+            console.print()
+        else:
+            console.print(f"  [dim]○[/] No token stored yet")
+            console.print()
+
+        choices = []
+        if token_exists:
+            choices.append(("Replace existing token", "store"))
+        else:
+            choices.append(("Store token now", "store"))
+
+        nav = 1 if first_iter and came_from == "back" else 0
+        first_iter = False
+        result = step_menu(choices, initial_nav=nav)
+
+        if result == "back":
+            return "back"
+        if result == "next":
+            if not token_exists:
+                console.print()
+                console.print("  [bold red]Cannot continue -- GitHub token not stored[/]")
+                console.print(f"    Required: [cyan]{token_path}[/]")
+                console.print()
+                console.print("  [dim]Use 'Store token now' to save your PAT first.[/]")
+                pause()
+                continue
+            config.mark_complete(5)
+            config.mark_complete(6)
+            return "next"
+        # result == "store"
+        _store_token(config)
+
+
+# ══════════════════════════════════════════════════════════════════
+#  DOCKER BUILD HELPER
+# ══════════════════════════════════════════════════════════════════
+
+def _run_docker_build(config: SetupConfig):
+    """Execute the Docker build with live output. Returns True on success."""
+    term_h = shutil.get_terminal_size().lines
+    output_max = max(5, min(term_h - 15, 25))
+
+    class _Display:
+        def __init__(self):
+            self.lines = []
+            self.start = time.monotonic()
+        def __rich_console__(self, _con, _opts):
+            elapsed = int(time.monotonic() - self.start)
+            m, s = divmod(elapsed, 60)
+            visible = self.lines[-output_max:]
+            out = "\n".join(visible) if visible else "  Starting build..."
+            yield Panel(
+                Text.from_ansi(out),
+                title=f"[bold]Build Output[/] [dim]({len(self.lines)} lines, {m}:{s:02d} elapsed)[/]",
+                border_style="dim cyan",
+                height=output_max + 2,
+            )
+
+    display = _Display()
+
+    try:
+        build_env = os.environ.copy()
+        build_env["BUILDKIT_PROGRESS"] = "plain"
+        proc = subprocess.Popen(
+            ["bash", os.path.join(config.install_dir, "build.sh")],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=config.install_dir,
+            env=build_env,
+        )
+
+        output_q = queue.Queue()
+
+        def _reader():
+            for line in proc.stdout:
+                output_q.put(line)
+            output_q.put(None)
+
+        threading.Thread(target=_reader, daemon=True).start()
+
+        with Live(display, console=console, refresh_per_second=4) as live:
+            while True:
+                try:
+                    line = output_q.get(timeout=0.1)
+                    if line is None:
+                        break
+                    for part in line.split("\r"):
+                        stripped = part.rstrip()
+                        if stripped:
+                            display.lines.append(stripped)
+                except queue.Empty:
+                    pass
+            proc.wait()
+
+        if proc.returncode == 0:
+            console.print()
+            console.print("  [bold green]✓ Docker image built successfully![/]")
+            config.mark_complete(7)
+            return True
+        else:
+            console.print()
+            console.print(f"  [bold red]x Build failed (exit code {proc.returncode})[/]")
+            console.print("  [dim]Check the output above for errors, or re-run ./build.sh[/]")
+            return False
+    except KeyboardInterrupt:
+        console.print("\n  [yellow]Build cancelled. Run ./build.sh manually later.[/]")
+        return False
+    except Exception as e:
+        console.print(f"\n  [red]x Build error: {e}[/]")
+        console.print("  [dim]Make sure Docker is running, then try ./build.sh manually.[/]")
+        return False
+
+
+# ══════════════════════════════════════════════════════════════════
 #  STEP 9 — DOCKER BUILD
 # ══════════════════════════════════════════════════════════════════
 
@@ -2623,7 +2933,8 @@ def step_docker_build(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(10, TOTAL_STEPS, "Build Docker Image",
+        _sn, _st = config.step_display_overrides.get("docker_build", (9, TOTAL_STEPS))
+        show_step_header(_sn, _st, "Build Docker Image",
                          "Build the Alcatraz Docker image")
 
         # Estimate build time based on profile
@@ -2684,90 +2995,17 @@ def step_docker_build(config: SetupConfig, came_from="next"):
         # result == "build"
         clear_screen()
         show_banner()
-        show_step_header(10, TOTAL_STEPS, "Build Docker Image",
+        _sn, _st = config.step_display_overrides.get("docker_build", (9, TOTAL_STEPS))
+        show_step_header(_sn, _st, "Build Docker Image",
                          "Building the Alcatraz Docker image")
         console.print()
         console.print("  [dim]Ctrl+C to cancel (you can run ./build.sh later).[/]")
         console.print()
 
-        term_h = shutil.get_terminal_size().lines
-        # Reserve more space for the step UI already on screen
-        output_max = max(5, min(term_h - 15, 25))
-
-        # Live renderable: __rich_console__ is called on every refresh cycle,
-        # so the elapsed timer updates automatically (refresh_per_second=4).
-        class _Display:
-            def __init__(self):
-                self.lines = []
-                self.start = time.monotonic()
-            def __rich_console__(self, _con, _opts):
-                elapsed = int(time.monotonic() - self.start)
-                m, s = divmod(elapsed, 60)
-                visible = self.lines[-output_max:]
-                out = "\n".join(visible) if visible else "  Starting build..."
-                yield Panel(
-                    Text.from_ansi(out),
-                    title=f"[bold]Build Output[/] [dim]({len(self.lines)} lines, {m}:{s:02d} elapsed)[/]",
-                    border_style="dim cyan",
-                    height=output_max + 2,
-                )
-
-        display = _Display()
-
-        try:
-            build_env = os.environ.copy()
-            build_env["BUILDKIT_PROGRESS"] = "plain"
-            proc = subprocess.Popen(
-                ["bash", os.path.join(config.install_dir, "build.sh")],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                cwd=config.install_dir,
-                env=build_env,
-            )
-
-            # Use a background thread to read subprocess output so the
-            # main thread never blocks on BuildKit's \r-based progress
-            # lines that lack a trailing \n.
-            output_q = queue.Queue()
-
-            def _reader():
-                for line in proc.stdout:
-                    output_q.put(line)
-                output_q.put(None)          # sentinel: EOF
-
-            threading.Thread(target=_reader, daemon=True).start()
-
-            with Live(display, console=console, refresh_per_second=4) as live:
-                while True:
-                    try:
-                        line = output_q.get(timeout=0.1)
-                        if line is None:
-                            break
-                        for part in line.split("\r"):
-                            stripped = part.rstrip()
-                            if stripped:
-                                display.lines.append(stripped)
-                    except queue.Empty:
-                        pass                # no output yet — Live auto-refreshes
-                proc.wait()
-
-            if proc.returncode == 0:
-                console.print()
-                console.print("  [bold green]✓ Docker image built successfully![/]")
-                config.mark_complete(7)
-                console.print()
-                pause()
-                return "next"
-            else:
-                console.print()
-                console.print(f"  [bold red]✗ Build failed (exit code {proc.returncode})[/]")
-                console.print("  [dim]Check the output above for errors, or re-run ./build.sh[/]")
-        except KeyboardInterrupt:
-            console.print("\n  [yellow]Build cancelled. Run ./build.sh manually later.[/]")
-        except Exception as e:
-            console.print(f"\n  [red]✗ Build error: {e}[/]")
-            console.print("  [dim]Make sure Docker is running, then try ./build.sh manually.[/]")
+        if _run_docker_build(config):
+            console.print()
+            pause()
+            return "next"
 
         console.print()
         pause()
@@ -2781,8 +3019,9 @@ def _run_oauth_auth(config: SetupConfig):
     """Execute auth.sh interactively for OAuth login."""
     clear_screen()
     show_banner()
-    show_step_header(11, TOTAL_STEPS, "Authenticate Claude Code",
-                     "Running OAuth login…")
+    _sn, _st = config.step_display_overrides.get("claude_auth", (10, TOTAL_STEPS))
+    show_step_header(_sn, _st, "Authenticate Claude Code",
+                     "Running OAuth login...")
     console.print()
     console.print("  [dim]A browser window will open. Complete the login,\n"
                   "  then type [cyan]/exit[/cyan] in the terminal.[/dim]")
@@ -2824,7 +3063,8 @@ def step_claude_auth(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(11, TOTAL_STEPS, "Authenticate Claude Code",
+        _sn, _st = config.step_display_overrides.get("claude_auth", (10, TOTAL_STEPS))
+        show_step_header(_sn, _st, "Authenticate Claude Code",
                          "One-time OAuth login to connect Claude Code to your account")
 
         # Check if already authenticated
@@ -2961,7 +3201,7 @@ def step_project_settings(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(12, TOTAL_STEPS, "Project Settings",
+        show_step_header(11, TOTAL_STEPS, "Project Settings",
                          "Deploy safety rules to your project's .claude/ directory")
 
         show_info_box("What is .claude/settings.json?", textwrap.dedent("""
@@ -3047,7 +3287,7 @@ def step_branch_protection(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(13, TOTAL_STEPS, "Branch Protection",
+        show_step_header(12, TOTAL_STEPS, "Branch Protection",
                          "Set up GitHub branch rulesets to block destructive pushes")
 
         show_info_box("Why Branch Protection?", textwrap.dedent("""
@@ -3126,7 +3366,7 @@ def step_install_launcher(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(14, TOTAL_STEPS, "Install Global Launcher",
+        show_step_header(13, TOTAL_STEPS, "Install Global Launcher",
                          "Add the 'alcatraz' command to your PATH for easy access")
 
         wrapper_src = os.path.join(config.install_dir, "alcatraz")
@@ -3242,7 +3482,7 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(15, TOTAL_STEPS, "Daily Workflow",
+        show_step_header(14, TOTAL_STEPS, "Daily Workflow",
                          "How to use Claude Code safely every day")
 
         console.print("  [bold underline]Starting a Session[/]")
@@ -3313,6 +3553,91 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
+#  QUICK STEP 6 — FINALIZE (LAUNCHER + WORKFLOW + SECURITY NOTES)
+# ══════════════════════════════════════════════════════════════════
+
+def step_finalize_combined(config: SetupConfig, came_from="next"):
+    """Quick mode: install launcher, show workflow tips and security notes."""
+    first_iter = True
+    while True:
+        clear_screen()
+        show_banner()
+        show_step_header(6, QUICK_TOTAL_STEPS, "Setup Complete",
+                         "Launcher installation and next steps")
+
+        # Auto-install launcher
+        wrapper_src = os.path.join(config.install_dir, "alcatraz")
+        home = os.path.expanduser("~")
+        local_bin = os.path.join(home, ".local", "bin")
+        wrapper_dest = os.path.join(local_bin, "alcatraz")
+
+        already_installed = os.path.exists(wrapper_dest) or shutil.which("alcatraz") is not None
+        if not already_installed:
+            _do_install_launcher(config, wrapper_src, local_bin, wrapper_dest)
+        else:
+            existing = shutil.which("alcatraz") or wrapper_dest
+            console.print(f"  [green]✓[/] [cyan]alcatraz[/] is already on your PATH: [dim]{existing}[/]")
+        console.print()
+
+        # Daily workflow
+        console.print("  [bold underline]Starting a Session[/]")
+        console.print()
+        console.print("    [cyan]cd ~/projects/my-project[/]")
+        console.print("    [cyan]git checkout -b claude/feature-xyz[/]   [dim]# Always use a branch[/]")
+        console.print("    [cyan]alcatraz[/]                              [dim]# Launch on current dir[/]")
+        console.print()
+
+        console.print("  [bold underline]After a Session[/]")
+        console.print()
+        console.print("    [cyan]git log --oneline -10[/]       [dim]# Review what Claude committed[/]")
+        console.print("    [cyan]git diff main..HEAD[/]         [dim]# Full diff against main[/]")
+        console.print("    [cyan]gh pr create[/]                [dim]# Open a PR for review[/]")
+        console.print()
+
+        # Security notes for skipped steps
+        ruleset_path = os.path.join(config.install_dir, "branch-ruleset.json")
+        settings_path = os.path.join(config.install_dir, "settings.json")
+        show_info_box("Recommended: Additional Security Steps", textwrap.dedent(f"""
+            Quick Install configured core security (deny list,
+            PreToolUse hook, Git Guardian). For full protection,
+            also set up:
+
+            [bold]1. Branch Protection (GitHub Rulesets)[/]
+               Import the included ruleset into your repo:
+               Settings -> Rules -> Rulesets -> Import a ruleset
+               File: [cyan]{ruleset_path}[/]
+
+            [bold]2. Project Settings (.claude/settings.json)[/]
+               Copy settings.json to each project's .claude/ dir:
+               [cyan]cp {settings_path} /path/to/project/.claude/[/]
+               This adds command-level deny rules per project.
+        """).strip(), style="yellow")
+        console.print()
+
+        # Completion panel
+        console.print(Panel(
+            Align.center(
+                Text("Setup Complete!\n\n", style="bold green", justify="center") +
+                Text("Your Alcatraz environment is fully configured.\n", style="white", justify="center") +
+                Text("All safety layers are in place:\n\n", style="white", justify="center") +
+                Text("Docker isolation + PAT scoping + Git Guardian\n", style="cyan", justify="center") +
+                Text("Deny list + PreToolUse hook\n", style="cyan", justify="center")
+            ),
+            border_style="green",
+            box=box.DOUBLE,
+            padding=(1, 4),
+        ))
+
+        nav = 1 if first_iter and came_from == "back" else 0
+        first_iter = False
+        result = step_menu([], initial_nav=nav, continue_label="Exit")
+
+        if result == "back":
+            return "back"
+        return "next"
+
+
+# ══════════════════════════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════════════════════════
 
@@ -3350,8 +3675,8 @@ def main():
     """).strip(), style="yellow")
     pause()
 
-    # All steps support back navigation
-    steps = [
+    # Step lists — both share indices 0-1; mode switch evaluated at index 2
+    manual_steps = [
         step_preflight,             # 0  — Step 1:  Pre-flight checks
         step_install_dir,           # 1  — Step 2:  Installation directory
         step_profile,               # 2  — Step 3:  Profile selection
@@ -3359,26 +3684,51 @@ def main():
         step_network,               # 4  — Step 5:  Network & ports
         step_security,              # 5  — Step 6:  Security & auth
         step_review_and_generate,   # 6  — Step 7:  Review & generate files
-        step_github_pat_creation,   # 7  — Step 8:  GitHub PAT creation
-        step_token_storage,         # 8  — Step 9:  Store token
-        step_docker_build,          # 9  — Step 10: Build Docker image
-        step_claude_auth,           # 10 — Step 11: Claude authentication
-        step_project_settings,      # 11 — Step 12: Project settings (.claude/)
-        step_branch_protection,     # 12 — Step 13: Branch protection
-        step_install_launcher,      # 13 — Step 14: Install global launcher
-        step_daily_workflow,        # 14 — Step 15: Daily workflow & complete
+        step_github_token_combined, # 7  — Step 8:  GitHub token (PAT + storage)
+        step_docker_build,          # 8  — Step 9:  Build Docker image
+        step_claude_auth,           # 9  — Step 10: Claude authentication
+        step_project_settings,      # 10 — Step 11: Project settings (.claude/)
+        step_branch_protection,     # 11 — Step 12: Branch protection
+        step_install_launcher,      # 12 — Step 13: Install global launcher
+        step_daily_workflow,        # 13 — Step 14: Daily workflow & complete
     ]
 
+    quick_steps = [
+        step_preflight,                # 0  — Step 1: Pre-flight checks
+        step_install_dir,              # 1  — Step 2: Install dir + mode choice
+        step_quick_generate_and_build, # 2  — Step 3: Generate files + Docker build
+        step_github_token_combined,    # 3  — Step 4: GitHub token (PAT + storage)
+        step_claude_auth,              # 4  — Step 5: Claude authentication
+        step_finalize_combined,        # 5  — Step 6: Launcher + workflow + notes
+    ]
+
+    steps = manual_steps
     current = 0
     came_from = "next"
     # Clear debug log at start
     with open(_DEBUG_LOG, "w") as f:
         f.write("=== Wizard debug trace ===\n")
     while current < len(steps):
+        # Mode switch at the boundary (index 2) — both lists share 0-1
+        if current == 2:
+            if config.install_mode == "quick":
+                steps = quick_steps
+                config.step_display_overrides = {
+                    "github_token": (4, QUICK_TOTAL_STEPS),
+                    "docker_build": (5, QUICK_TOTAL_STEPS),
+                    "claude_auth": (5, QUICK_TOTAL_STEPS),
+                }
+            else:
+                steps = manual_steps
+                config.step_display_overrides = {}
+                # Clear auto-marked steps if switching back from quick
+                for i in range(1, 5):
+                    config.completed_steps.discard(i)
+
         _dbg(f"\n[MAIN] current={current}, calling {steps[current].__name__}, came_from={came_from}")
         # step_preflight handles its own clear_screen/show_banner.
-        # step_review_and_generate (idx 6) needs it done here since it doesn't loop.
-        if current == 6:
+        # step_review_and_generate (manual idx 6) needs it done here since it doesn't loop.
+        if steps is manual_steps and current == 6:
             clear_screen()
             show_banner()
         result = steps[current](config, came_from=came_from)
