@@ -169,7 +169,7 @@ The wizard creates the following in your chosen install directory:
 
 | Profile | Image Size | Includes | Best For |
 |---------|-----------|----------|----------|
-| **Recommended** | ~4-5 GB | Core + Cloud CLIs + Infra + Browser | Most teams |
+| **Recommended** | ~4-5 GB | Core + Cloud CLIs + Infra + DB clients | Most teams |
 | **Minimal** | ~1.5-2 GB | Core + GitHub CLI | Quick start |
 | **Full** | ~7-8 GB | Everything + ML packages | ML/Data teams |
 | **Custom** | Varies | You pick each component | Specific needs |

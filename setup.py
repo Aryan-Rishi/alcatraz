@@ -124,7 +124,6 @@ class SetupConfig:
     include_cloud_clis: bool = True
     include_infra_tools: bool = True
     include_ml_packages: bool = False
-    include_browser: bool = True
     include_docker_cli: bool = True
     include_github_cli: bool = True
     include_db_clients: bool = True
@@ -803,7 +802,7 @@ def step_profile(config: SetupConfig, came_from="next"):
         star = lambda p: "⭐ " if config.profile == p else "   "
         rows = [
             (f"{star('recommended')}Recommended", "~4–5 GB",
-             "Core tools, GitHub CLI, Cloud CLIs, Infra, Browser, DB clients",
+             "Core tools, GitHub CLI, Cloud CLIs, Infra, DB clients",
              "Most web/backend teams"),
             (f"{star('minimal')}Minimal", "~1.5–2 GB",
              "Core tools, GitHub CLI only",
@@ -845,7 +844,7 @@ def step_profile(config: SetupConfig, came_from="next"):
         profile = questionary.select(
             "Select a profile:",
             choices=[
-                questionary.Choice(f"{sel('recommended')} Recommended  — Core + Cloud + Infra + Browser", value="recommended"),
+                questionary.Choice(f"{sel('recommended')} Recommended  — Core + Cloud + Infra + DB", value="recommended"),
                 questionary.Choice(f"{sel('minimal')} Minimal      — Core + GitHub CLI only", value="minimal"),
                 questionary.Choice(f"{sel('full')} Full         — Everything including ML packages", value="full"),
                 questionary.Choice(f"{sel('custom')} Custom       — Choose each component", value="custom"),
@@ -862,7 +861,6 @@ def step_profile(config: SetupConfig, came_from="next"):
             config.include_cloud_clis = True
             config.include_infra_tools = True
             config.include_ml_packages = False
-            config.include_browser = True
             config.include_docker_cli = True
             config.include_github_cli = True
             config.include_db_clients = True
@@ -870,7 +868,6 @@ def step_profile(config: SetupConfig, came_from="next"):
             config.include_cloud_clis = False
             config.include_infra_tools = False
             config.include_ml_packages = False
-            config.include_browser = False
             config.include_docker_cli = False
             config.include_github_cli = True
             config.include_db_clients = False
@@ -878,7 +875,6 @@ def step_profile(config: SetupConfig, came_from="next"):
             config.include_cloud_clis = True
             config.include_infra_tools = True
             config.include_ml_packages = True
-            config.include_browser = True
             config.include_docker_cli = True
             config.include_github_cli = True
             config.include_db_clients = True
@@ -901,7 +897,6 @@ def step_custom_components(config: SetupConfig):
             questionary.Choice("Cloud CLIs — AWS, GCP, Azure", value="cloud_clis", checked=config.include_cloud_clis),
             questionary.Choice("Infrastructure — Terraform, kubectl", value="infra_tools", checked=config.include_infra_tools),
             questionary.Choice("Database clients — SQLite, PostgreSQL, MySQL, Redis", value="db_clients", checked=config.include_db_clients),
-            questionary.Choice("Browser — Chrome + Playwright (for MCP / testing)", value="browser", checked=config.include_browser),
             questionary.Choice("ML/Data Science — PyTorch (CPU), NumPy, Pandas, Jupyter", value="ml_packages", checked=config.include_ml_packages),
         ],
         style=q_style,
@@ -915,7 +910,6 @@ def step_custom_components(config: SetupConfig):
     config.include_cloud_clis = "cloud_clis" in components
     config.include_infra_tools = "infra_tools" in components
     config.include_db_clients = "db_clients" in components
-    config.include_browser = "browser" in components
     config.include_ml_packages = "ml_packages" in components
     return "next"
 
@@ -1617,9 +1611,14 @@ def generate_dockerfile(config: SetupConfig) -> str:
         # ============================================================
         ARG USER_UID=1000
         ARG USER_GID=1000
-        RUN groupmod --gid $USER_GID node \\
-            && usermod --uid $USER_UID --gid $USER_GID node \\
-            && chown -R $USER_UID:$USER_GID /home/node
+        # Handle UID/GID conflicts (e.g. macOS GID 20 already exists as dialout in Debian)
+        RUN if ! getent group "$USER_GID" >/dev/null 2>&1; then \
+              groupmod --gid "$USER_GID" node; \
+            elif [ "$(getent group "$USER_GID" | cut -d: -f1)" = "node" ]; then \
+              true; \
+            fi \
+            && usermod --uid "$USER_UID" --gid "$USER_GID" node \
+            && chown -R "$USER_UID":"$USER_GID" /home/node
 
         # Minimal sudo: only credential helper operations (no apt-get, chmod, chown)
         RUN echo "node ALL=(ALL) NOPASSWD: /usr/bin/tee /root/.git-credentials, /bin/cat /root/.git-credentials, /usr/bin/cat /root/.git-credentials, /bin/chmod 600 /root/.git-credentials, /usr/bin/chmod 600 /root/.git-credentials" >> /etc/sudoers
@@ -1631,20 +1630,6 @@ def generate_dockerfile(config: SetupConfig) -> str:
         COPY git-guardian.sh /usr/local/bin/git
         RUN chmod +x /usr/local/bin/git"""))
 
-    # Browser
-    if config.include_browser:
-        sections.append(textwrap.dedent("""
-        # ============================================================
-        # Browser — Google Chrome + Playwright
-        # ============================================================
-        RUN curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o /tmp/chrome.deb \\
-            && apt-get update && apt-get install -y /tmp/chrome.deb \\
-            && rm /tmp/chrome.deb && rm -rf /var/lib/apt/lists/*
-
-        ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright
-        ENV CHROME_PATH=/usr/bin/google-chrome-stable
-        ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable"""))
-
     # Workdir + user switch
     sections.append(textwrap.dedent("""
         # Disable Claude Code auto-update — pinned at build time, avoids
@@ -1653,10 +1638,6 @@ def generate_dockerfile(config: SetupConfig) -> str:
 
         WORKDIR /workspace
         USER node"""))
-
-    if config.include_browser:
-        sections.append(textwrap.dedent("""
-        RUN npx playwright install chromium"""))
 
     sections.append("""
         CMD ["bash"]""")
@@ -1712,39 +1693,6 @@ if [ -f "$ANTHROPIC_API_KEY_FILE" ]; then
         echo "WARNING: Invalid Anthropic API key format in $ANTHROPIC_API_KEY_FILE — skipping"
     fi
 fi
-"""
-
-    chrome_block = ""
-    if config.include_browser:
-        chrome_block = """
-        # Launch headless Chrome for browser testing / chrome-devtools MCP
-        if command -v google-chrome-stable &>/dev/null; then
-            # Supervisor: auto-restart Chrome if it crashes (runs in background)
-            (
-                RESTART_DELAY=2
-                MAX_DELAY=30
-                while true; do
-                    google-chrome-stable --no-sandbox --headless=new \\
-                        --remote-debugging-port=9222 --disable-gpu \\
-                        --disable-dev-shm-usage --no-first-run \\
-                        about:blank 2>/tmp/chrome-error.log
-                    echo \\"[\\$(date '+%H:%M:%S')] Chrome exited (\\$?), restarting in \\${RESTART_DELAY}s...\\" >&2
-                    sleep \\$RESTART_DELAY
-                    RESTART_DELAY=\\$((RESTART_DELAY * 2))
-                    if [ \\$RESTART_DELAY -gt \\$MAX_DELAY ]; then
-                        RESTART_DELAY=\\$MAX_DELAY
-                    fi
-                done
-            ) &
-
-            # Wait for Chrome to be ready (poll port 9222 instead of blind sleep)
-            for i in \\$(seq 1 15); do
-                if curl -sf http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
-                    break
-                fi
-                sleep 1
-            done
-        fi
 """
 
     return textwrap.dedent(f'''\
@@ -1982,7 +1930,7 @@ docker run -it --rm \\
         GIT_EMAIL=\\"\\${{HOST_GIT_EMAIL:-\\$(/usr/bin/git -C /workspace log -1 --format=%ae 2>/dev/null || echo claude@local)}}\\"
         /usr/bin/git config --global user.name \\"\\$GIT_NAME\\"
         /usr/bin/git config --global user.email \\"\\$GIT_EMAIL\\"
-{chrome_block}
+
         # Build port mapping context for Claude so it tells users the correct host URLs
         PORT_CONTEXT=''
         for var in \\$(env | grep ^HOST_PORT_ | sort); do
@@ -2070,18 +2018,6 @@ exit 0
 
 def generate_settings_json(config: SetupConfig) -> str:
     settings = {}
-
-    # MCP servers — Playwright for browser automation and testing
-    if config.include_browser:
-        settings["mcpServers"] = {
-            "playwright": {
-                "command": "npx",
-                "args": [
-                    "-y",
-                    "@anthropic-ai/mcp-server-playwright",
-                ],
-            }
-        }
 
     if config.enable_deny_list:
         deny = [
@@ -2239,7 +2175,6 @@ def step_review_and_generate(config: SetupConfig, came_from="next"):
     if config.include_cloud_clis: components.append("Cloud CLIs")
     if config.include_infra_tools: components.append("Terraform/kubectl")
     if config.include_db_clients: components.append("DB clients")
-    if config.include_browser: components.append("Chrome/Playwright")
     if config.include_ml_packages: components.append("ML packages")
     comp_str = ", ".join(components) if components else "Core only"
     table.add_row("Profile", f"{config.profile.title()}  ({comp_str})")
