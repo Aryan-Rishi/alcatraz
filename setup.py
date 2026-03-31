@@ -56,7 +56,7 @@ except ImportError:
 console = Console()
 VERSION = "1.1.0"
 TOTAL_STEPS = 13
-QUICK_TOTAL_STEPS = 5
+RECOMMENDED_TOTAL_STEPS = 4
 
 # ── Debug tracing ─────────────────────────────────────────────────
 _DEBUG_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wizard_debug.log")
@@ -151,7 +151,7 @@ class SetupConfig:
     # Claude auth
     auth_method: str = "oauth"  # oauth | api_key
     # Install mode
-    install_mode: str = "manual"  # quick | manual
+    install_mode: str = "custom"  # recommended | custom
     step_display_overrides: dict = field(default_factory=dict)
     # OS detected
     os_type: str = ""
@@ -613,7 +613,7 @@ def run_preflight(config: SetupConfig) -> bool:
     console.print()
     if all_ok:
         show_info_box("All Clear", "[bold green]All required tools are installed and running.[/]\nReady to proceed with setup.", style="green")
-        pause()
+        _choose_install_mode(config)
         return True
 
     # If the only issue is Docker not running (installed but stopped), offer retry
@@ -640,7 +640,7 @@ def run_preflight(config: SetupConfig) -> bool:
                 console.print("  [bold green]✔[/] Docker is now running!")
                 console.print()
                 show_info_box("All Clear", "[bold green]All required tools are installed and running.[/]\nReady to proceed with setup.", style="green")
-                pause()
+                _choose_install_mode(config)
                 return True
             else:
                 console.print("  [bold red]✘[/] Docker still not responding.")
@@ -697,7 +697,9 @@ def step_install_dir(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(1, TOTAL_STEPS, "Installation Directory",
+        # Use correct total based on install mode (set during preflight)
+        total = RECOMMENDED_TOTAL_STEPS if config.install_mode == "recommended" else TOTAL_STEPS
+        show_step_header(1, total, "Installation Directory",
                          "Where to create the alcatraz setup files")
 
         # On WSL, hint that ~/... paths live in the WSL filesystem, not the Windows drive
@@ -724,7 +726,8 @@ def step_install_dir(config: SetupConfig, came_from="next"):
             if not config.install_dir:
                 config.install_dir = default_dir
             config.mark_complete(0)
-            _choose_install_mode(config)
+            if config.install_mode == "recommended":
+                _recommended_generate_and_build(config)
             return result
 
         # result == "edit"
@@ -783,10 +786,10 @@ def step_install_dir(config: SetupConfig, came_from="next"):
             config.mark_complete(0)
 
 
-# ── Install-mode chooser (called at end of step_install_dir) ─────
+# ── Install-mode chooser (called at end of preflight checks) ─────
 
 def _choose_install_mode(config: SetupConfig):
-    """Let the user pick Quick Install or Manual Install."""
+    """Let the user pick Recommended Install or Custom Install."""
     console.print()
     console.print("  [bold]How would you like to configure Alcatraz?[/]")
     console.print()
@@ -795,20 +798,80 @@ def _choose_install_mode(config: SetupConfig):
         "",
         choices=[
             questionary.Choice(
-                "Quick Install  --  Recommended defaults, minimal setup",
-                value="quick",
+                "Recommended Install",
+                value="recommended",
             ),
             questionary.Choice(
-                "Manual Install  --  Configure every option individually",
-                value="manual",
+                "Custom Install",
+                value="custom",
             ),
         ],
-        default="quick",
+        default="recommended",
         style=q_style,
     ).ask()
     if choice is None:
         sys.exit(0)
     config.install_mode = choice
+
+
+# ── Recommended-mode generate & build (inline in Step 1) ─────────
+
+def _recommended_generate_and_build(config: SetupConfig):
+    """Recommended Install: show defaults, generate files, and build Docker within Step 1."""
+    clear_screen()
+    show_banner()
+    show_step_header(1, RECOMMENDED_TOTAL_STEPS, "Installation Directory",
+                     "Where to create the alcatraz setup files")
+
+    console.print(f"  [green]\u2714[/] [bold]Directory:[/] {config.install_dir}")
+    console.print()
+
+    # Bulk-mark config steps as complete (using dataclass defaults)
+    for i in range(5):
+        config.mark_complete(i)
+
+    # Show defaults summary
+    console.print("  [bold]Using recommended defaults:[/]")
+    console.print(f"    [bold]Profile:[/]       Recommended (~4-5 GB)")
+    console.print(f"    [bold]Network:[/]       Bridge, deterministic ports (3000, 3001, 5173, 8080)")
+    console.print(f"    [bold]Security:[/]      Deny list + PreToolUse hook")
+    console.print(f"    [bold]Git Guardian:[/]  Protecting main, master, develop, production, release")
+    console.print(f"    [bold]PAT type:[/]      Fine-grained")
+    console.print()
+
+    # Generate files
+    _generate_files(config)
+
+    # Build Docker image
+    console.print("  [bold]Building Docker image[/] [dim](this may take 10-15 minutes)...[/]")
+    console.print()
+
+    if _run_docker_build(config):
+        console.print()
+        pause()
+        return
+
+    # Build failed -- let user retry or skip
+    console.print()
+    action = questionary.select(
+        "",
+        choices=[
+            questionary.Choice("Retry build", value="retry"),
+            questionary.Choice("Skip (run ./build.sh manually later)", value="skip"),
+        ],
+        style=q_style,
+    ).ask()
+    if action is None:
+        sys.exit(0)
+    if action == "retry":
+        if _run_docker_build(config):
+            console.print()
+            pause()
+            return
+    console.print()
+    console.print("  [dim]Run ./build.sh from your install directory when ready.[/]")
+    console.print()
+    pause()
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -2174,8 +2237,8 @@ exec "$RUN_SCRIPT" "$@"
 def _generate_files(config: SetupConfig):
     """Generate all configuration files to install_dir.
 
-    Used by step_review_and_generate (manual mode) and
-    step_quick_generate_and_build (quick mode).
+    Used by step_review_and_generate (custom mode) and
+    _recommended_generate_and_build (recommended mode).
     """
     install_dir = Path(config.install_dir)
     install_dir.mkdir(parents=True, exist_ok=True)
@@ -2438,18 +2501,18 @@ def step_review_and_generate(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  QUICK STEP 2 — GENERATE FILES + DOCKER BUILD
+#  RECOMMENDED STEP 2 — GENERATE FILES + DOCKER BUILD (legacy, now inline in Step 1)
 # ══════════════════════════════════════════════════════════════════
 
-def step_quick_generate_and_build(config: SetupConfig, came_from="next"):
-    """Quick mode: generate all files with defaults, then build Docker image."""
+def step_recommended_generate_and_build(config: SetupConfig, came_from="next"):
+    """Recommended mode: generate all files with defaults, then build Docker image."""
     # Pass-through on back so user lands on step_install_dir (can switch modes)
     if came_from == "back":
         return "back"
 
     clear_screen()
     show_banner()
-    show_step_header(2, QUICK_TOTAL_STEPS, "Generate & Build",
+    show_step_header(2, RECOMMENDED_TOTAL_STEPS, "Generate & Build",
                      "Generate configuration files and build the Docker image")
 
     # Bulk-mark config steps 0-4 as complete (using dataclass defaults)
@@ -2729,11 +2792,11 @@ def step_token_storage(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  QUICK STEP 3 — GITHUB TOKEN (PAT GUIDE + STORAGE)
+#  RECOMMENDED STEP 2 — GITHUB TOKEN (PAT GUIDE + STORAGE)
 # ══════════════════════════════════════════════════════════════════
 
 def step_github_token_combined(config: SetupConfig, came_from="next"):
-    """Quick mode: combined PAT creation guide + token storage."""
+    """Combined PAT creation guide + token storage (used by both modes)."""
     first_iter = True
     while True:
         clear_screen()
@@ -3558,16 +3621,16 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  QUICK STEP 5 — FINALIZE (LAUNCHER + WORKFLOW + SECURITY NOTES)
+#  RECOMMENDED STEP 4 — FINALIZE (LAUNCHER + WORKFLOW + SECURITY NOTES)
 # ══════════════════════════════════════════════════════════════════
 
 def step_finalize_combined(config: SetupConfig, came_from="next"):
-    """Quick mode: install launcher, show workflow tips and security notes."""
+    """Recommended mode: install launcher, show workflow tips and security notes."""
     first_iter = True
     while True:
         clear_screen()
         show_banner()
-        show_step_header(5, QUICK_TOTAL_STEPS, "Setup Complete",
+        show_step_header(4, RECOMMENDED_TOTAL_STEPS, "Setup Complete",
                          "Launcher installation and next steps")
 
         # Auto-install launcher
@@ -3603,7 +3666,7 @@ def step_finalize_combined(config: SetupConfig, came_from="next"):
         ruleset_path = os.path.join(config.install_dir, "branch-ruleset.json")
         settings_path = os.path.join(config.install_dir, "settings.json")
         show_info_box("Recommended: Additional Security Steps", textwrap.dedent(f"""
-            Quick Install configured core security (deny list,
+            Recommended Install configured core security (deny list,
             PreToolUse hook, Git Guardian). For full protection,
             also set up:
 
@@ -3681,7 +3744,7 @@ def main():
     pause()
 
     # Step lists — both share indices 0-1; mode switch evaluated at index 2
-    manual_steps = [
+    custom_steps = [
         step_preflight,             # 0  — Pre-flight checks (not numbered)
         step_install_dir,           # 1  — Step 1:  Installation directory
         step_profile,               # 2  — Step 2:  Profile selection
@@ -3698,16 +3761,15 @@ def main():
         step_daily_workflow,        # 13 — Step 13: Daily workflow & complete
     ]
 
-    quick_steps = [
+    recommended_steps = [
         step_preflight,                # 0  — Pre-flight checks (not numbered)
-        step_install_dir,              # 1  — Step 1: Install dir + mode choice
-        step_quick_generate_and_build, # 2  — Step 2: Generate files + Docker build
-        step_github_token_combined,    # 3  — Step 3: GitHub token (PAT + storage)
-        step_claude_auth,              # 4  — Step 4: Claude authentication
-        step_finalize_combined,        # 5  — Step 5: Launcher + workflow + notes
+        step_install_dir,              # 1  — Step 1: Install dir + Generate & Build
+        step_github_token_combined,    # 2  — Step 2: GitHub token (PAT + storage)
+        step_claude_auth,              # 3  — Step 3: Claude authentication
+        step_finalize_combined,        # 4  — Step 4: Launcher + workflow + notes
     ]
 
-    steps = manual_steps
+    steps = custom_steps
     current = 0
     came_from = "next"
     # Clear debug log at start
@@ -3716,24 +3778,23 @@ def main():
     while current < len(steps):
         # Mode switch at the boundary (index 2) — both lists share 0-1
         if current == 2:
-            if config.install_mode == "quick":
-                steps = quick_steps
+            if config.install_mode == "recommended":
+                steps = recommended_steps
                 config.step_display_overrides = {
-                    "github_token": (3, QUICK_TOTAL_STEPS),
-                    "docker_build": (4, QUICK_TOTAL_STEPS),
-                    "claude_auth": (4, QUICK_TOTAL_STEPS),
+                    "github_token": (2, RECOMMENDED_TOTAL_STEPS),
+                    "claude_auth": (3, RECOMMENDED_TOTAL_STEPS),
                 }
             else:
-                steps = manual_steps
+                steps = custom_steps
                 config.step_display_overrides = {}
-                # Clear auto-marked steps if switching back from quick
+                # Clear auto-marked steps if switching back from recommended
                 for i in range(1, 5):
                     config.completed_steps.discard(i)
 
         _dbg(f"\n[MAIN] current={current}, calling {steps[current].__name__}, came_from={came_from}")
         # step_preflight handles its own clear_screen/show_banner.
-        # step_review_and_generate (manual idx 6) needs it done here since it doesn't loop.
-        if steps is manual_steps and current == 6:
+        # step_review_and_generate (custom idx 6) needs it done here since it doesn't loop.
+        if steps is custom_steps and current == 6:
             clear_screen()
             show_banner()
         result = steps[current](config, came_from=came_from)
