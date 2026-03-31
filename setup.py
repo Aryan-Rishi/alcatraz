@@ -55,8 +55,8 @@ except ImportError:
 # ── Globals ───────────────────────────────────────────────────────
 console = Console()
 VERSION = "1.1.0"
-TOTAL_STEPS = 14
-QUICK_TOTAL_STEPS = 6
+TOTAL_STEPS = 13
+QUICK_TOTAL_STEPS = 5
 
 # ── Debug tracing ─────────────────────────────────────────────────
 _DEBUG_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wizard_debug.log")
@@ -392,7 +392,7 @@ def step_menu(choices, initial_nav=0, continue_label="Continue"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 0 — PRE-FLIGHT CHECKS
+#  PRE-FLIGHT CHECKS
 # ══════════════════════════════════════════════════════════════════
 
 def detect_os() -> tuple[str, bool]:
@@ -501,7 +501,12 @@ def fix_wsl_metadata() -> bool:
 
 
 def run_preflight(config: SetupConfig) -> bool:
-    show_step_header(1, TOTAL_STEPS, "Pre-Flight Checks", "Verifying required tools are installed")
+    console.print()
+    console.print(Rule(style="dim cyan"))
+    console.print("  [bold cyan]Pre-Flight Checks[/]")
+    console.print("  [dim]Verifying required tools are installed[/]")
+    console.print(Rule(style="dim cyan"))
+    console.print()
 
     os_type, is_wsl = detect_os()
     config.os_type = os_type
@@ -653,7 +658,7 @@ def run_preflight(config: SetupConfig) -> bool:
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 1 — INSTALL DIRECTORY
+#  STEP 1 — INSTALLATION DIRECTORY
 # ══════════════════════════════════════════════════════════════════
 
 def _get_windows_home_via_wsl() -> str:
@@ -692,7 +697,7 @@ def step_install_dir(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(2, TOTAL_STEPS, "Installation Directory",
+        show_step_header(1, TOTAL_STEPS, "Installation Directory",
                          "Where to create the alcatraz setup files")
 
         # On WSL, hint that ~/... paths live in the WSL filesystem, not the Windows drive
@@ -807,7 +812,7 @@ def _choose_install_mode(config: SetupConfig):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 2 — PROFILE SELECTION
+#  STEP 2 — SETUP PROFILE
 # ══════════════════════════════════════════════════════════════════
 
 def step_profile(config: SetupConfig, came_from="next"):
@@ -815,7 +820,7 @@ def step_profile(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(3, TOTAL_STEPS, "Setup Profile",
+        show_step_header(2, TOTAL_STEPS, "Setup Profile",
                          "Choose a pre-configured profile or customise everything")
 
         term_w = console.width
@@ -948,7 +953,7 @@ def step_custom_components(config: SetupConfig):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 3 — GIT GUARDIAN CONFIG
+#  STEP 3 — GIT GUARDIAN CONFIGURATION
 # ══════════════════════════════════════════════════════════════════
 
 def _edit_git_guardian(config: SetupConfig):
@@ -1005,7 +1010,7 @@ def step_git_guardian(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(4, TOTAL_STEPS, "Git Guardian Configuration",
+        show_step_header(3, TOTAL_STEPS, "Git Guardian Configuration",
                          "Configure the safety wrapper around git commands")
 
         show_info_box("What is Git Guardian?", textwrap.dedent("""
@@ -1128,7 +1133,7 @@ def step_network(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(5, TOTAL_STEPS, "Network & Ports",
+        show_step_header(4, TOTAL_STEPS, "Network & Ports",
                          "Configure container networking and port forwarding")
 
         # Show current values
@@ -1159,7 +1164,7 @@ def step_network(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 5 — SECURITY OPTIONS
+#  STEP 5 — SECURITY & SAFETY LAYERS
 # ══════════════════════════════════════════════════════════════════
 
 def _edit_security(config: SetupConfig):
@@ -1268,7 +1273,7 @@ def step_security(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(6, TOTAL_STEPS, "Security & Safety Layers",
+        show_step_header(5, TOTAL_STEPS, "Security & Safety Layers",
                          "Configure additional protection layers")
 
         # Show current values
@@ -2320,11 +2325,11 @@ docker run -it --rm \\
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 6 — REVIEW & GENERATE
+#  STEP 6 — REVIEW & GENERATE FILES
 # ══════════════════════════════════════════════════════════════════
 
 def step_review_and_generate(config: SetupConfig, came_from="next"):
-    show_step_header(7, TOTAL_STEPS, "Review & Generate",
+    show_step_header(6, TOTAL_STEPS, "Review & Generate",
                      "Confirm your choices and generate all configuration files")
 
     # ── Validation gate — check all steps are complete ──
@@ -2332,7 +2337,7 @@ def step_review_and_generate(config: SetupConfig, came_from="next"):
     if missing:
         console.print("  [bold red]⚠  Cannot generate — the following steps are incomplete:[/]\n")
         for idx in missing:
-            console.print(f"    [red]○[/] Step {idx + 2}: {config.STEP_NAMES[idx]}")
+            console.print(f"    [red]○[/] Step {idx + 1}: {config.STEP_NAMES[idx]}")
         console.print()
         console.print("  [dim]Go back and complete the incomplete steps, then return here.[/]")
         console.print()
@@ -2433,7 +2438,7 @@ def step_review_and_generate(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  QUICK STEP 3 — GENERATE FILES + DOCKER BUILD
+#  QUICK STEP 2 — GENERATE FILES + DOCKER BUILD
 # ══════════════════════════════════════════════════════════════════
 
 def step_quick_generate_and_build(config: SetupConfig, came_from="next"):
@@ -2444,7 +2449,7 @@ def step_quick_generate_and_build(config: SetupConfig, came_from="next"):
 
     clear_screen()
     show_banner()
-    show_step_header(3, QUICK_TOTAL_STEPS, "Generate & Build",
+    show_step_header(2, QUICK_TOTAL_STEPS, "Generate & Build",
                      "Generate configuration files and build the Docker image")
 
     # Bulk-mark config steps 0-4 as complete (using dataclass defaults)
@@ -2497,7 +2502,7 @@ def step_quick_generate_and_build(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 7 — GITHUB PAT CREATION
+#  STEP 7 — GITHUB PAT
 # ══════════════════════════════════════════════════════════════════
 
 def step_github_pat_creation(config: SetupConfig, came_from="next"):
@@ -2506,7 +2511,7 @@ def step_github_pat_creation(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(8, TOTAL_STEPS, "Create GitHub Personal Access Token",
+        show_step_header(7, TOTAL_STEPS, "Create GitHub Personal Access Token",
                          "Create a scoped token for secure Docker container access")
 
         if config.pat_type == "fine-grained":
@@ -2666,7 +2671,7 @@ def step_token_storage(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(9, TOTAL_STEPS, "Store GitHub Token",
+        show_step_header(8, TOTAL_STEPS, "Store GitHub Token",
                          "Save your PAT securely for Docker container access")
 
         home = os.path.expanduser("~")
@@ -2724,7 +2729,7 @@ def step_token_storage(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  QUICK STEP 4 — GITHUB TOKEN (PAT GUIDE + STORAGE)
+#  QUICK STEP 3 — GITHUB TOKEN (PAT GUIDE + STORAGE)
 # ══════════════════════════════════════════════════════════════════
 
 def step_github_token_combined(config: SetupConfig, came_from="next"):
@@ -2733,7 +2738,7 @@ def step_github_token_combined(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        _sn, _st = config.step_display_overrides.get("github_token", (8, TOTAL_STEPS))
+        _sn, _st = config.step_display_overrides.get("github_token", (7, TOTAL_STEPS))
         show_step_header(_sn, _st, "GitHub Token",
                          "Create and store a GitHub Personal Access Token")
 
@@ -2924,7 +2929,7 @@ def _run_docker_build(config: SetupConfig):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 9 — DOCKER BUILD
+#  STEP 8 — DOCKER BUILD
 # ══════════════════════════════════════════════════════════════════
 
 def step_docker_build(config: SetupConfig, came_from="next"):
@@ -2933,7 +2938,7 @@ def step_docker_build(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        _sn, _st = config.step_display_overrides.get("docker_build", (9, TOTAL_STEPS))
+        _sn, _st = config.step_display_overrides.get("docker_build", (8, TOTAL_STEPS))
         show_step_header(_sn, _st, "Build Docker Image",
                          "Build the Alcatraz Docker image")
 
@@ -2995,7 +3000,7 @@ def step_docker_build(config: SetupConfig, came_from="next"):
         # result == "build"
         clear_screen()
         show_banner()
-        _sn, _st = config.step_display_overrides.get("docker_build", (9, TOTAL_STEPS))
+        _sn, _st = config.step_display_overrides.get("docker_build", (8, TOTAL_STEPS))
         show_step_header(_sn, _st, "Build Docker Image",
                          "Building the Alcatraz Docker image")
         console.print()
@@ -3012,14 +3017,14 @@ def step_docker_build(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 10 — CLAUDE AUTHENTICATION
+#  STEP 9 — CLAUDE AUTHENTICATION
 # ══════════════════════════════════════════════════════════════════
 
 def _run_oauth_auth(config: SetupConfig):
     """Execute auth.sh interactively for OAuth login."""
     clear_screen()
     show_banner()
-    _sn, _st = config.step_display_overrides.get("claude_auth", (10, TOTAL_STEPS))
+    _sn, _st = config.step_display_overrides.get("claude_auth", (9, TOTAL_STEPS))
     show_step_header(_sn, _st, "Authenticate Claude Code",
                      "Running OAuth login...")
     console.print()
@@ -3030,7 +3035,7 @@ def _run_oauth_auth(config: SetupConfig):
     auth_script = os.path.join(config.install_dir, "auth.sh")
     if not os.path.isfile(auth_script):
         console.print(f"  [bold red]✗ Auth script not found:[/] [cyan]{auth_script}[/]")
-        console.print("  [dim]Go back to Step 7 (Review & Generate) to generate files first.[/]")
+        console.print("  [dim]Go back to Step 6 (Review & Generate) to generate files first.[/]")
         console.print()
         pause()
         return
@@ -3063,7 +3068,7 @@ def step_claude_auth(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        _sn, _st = config.step_display_overrides.get("claude_auth", (10, TOTAL_STEPS))
+        _sn, _st = config.step_display_overrides.get("claude_auth", (9, TOTAL_STEPS))
         show_step_header(_sn, _st, "Authenticate Claude Code",
                          "One-time OAuth login to connect Claude Code to your account")
 
@@ -3136,7 +3141,7 @@ def step_claude_auth(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 11 — PROJECT SETTINGS (settings.json)
+#  STEP 10 — PROJECT SETTINGS (settings.json)
 # ══════════════════════════════════════════════════════════════════
 
 def _copy_project_settings(config: SetupConfig):
@@ -3201,7 +3206,7 @@ def step_project_settings(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(11, TOTAL_STEPS, "Project Settings",
+        show_step_header(10, TOTAL_STEPS, "Project Settings",
                          "Deploy safety rules to your project's .claude/ directory")
 
         show_info_box("What is .claude/settings.json?", textwrap.dedent("""
@@ -3252,10 +3257,10 @@ def step_project_settings(config: SetupConfig, came_from="next"):
         console.print()
 
         if config.enable_deny_list or config.enable_pretool_hook:
-            console.print("  [green]✓[/] Your settings.json was generated in Step 7")
+            console.print("  [green]✓[/] Your settings.json was generated in Step 6")
             console.print(f"    [dim]{config.install_dir}/settings.json[/]")
         else:
-            console.print("  [dim]Deny list and PreToolUse hook were not enabled in Step 6.[/]")
+            console.print("  [dim]Deny list and PreToolUse hook were not enabled in Step 5.[/]")
             console.print("  [dim]You can go back to enable them, or set them up manually later.[/]")
         console.print()
 
@@ -3278,7 +3283,7 @@ def step_project_settings(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 12 — BRANCH PROTECTION
+#  STEP 11 — BRANCH PROTECTION
 # ══════════════════════════════════════════════════════════════════
 
 def step_branch_protection(config: SetupConfig, came_from="next"):
@@ -3287,7 +3292,7 @@ def step_branch_protection(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(12, TOTAL_STEPS, "Branch Protection",
+        show_step_header(11, TOTAL_STEPS, "Branch Protection",
                          "Set up GitHub branch rulesets to block destructive pushes")
 
         show_info_box("Why Branch Protection?", textwrap.dedent("""
@@ -3357,7 +3362,7 @@ def step_branch_protection(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 13 — INSTALL GLOBAL LAUNCHER
+#  STEP 12 — INSTALL GLOBAL LAUNCHER
 # ══════════════════════════════════════════════════════════════════
 
 def step_install_launcher(config: SetupConfig, came_from="next"):
@@ -3366,7 +3371,7 @@ def step_install_launcher(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(13, TOTAL_STEPS, "Install Global Launcher",
+        show_step_header(12, TOTAL_STEPS, "Install Global Launcher",
                          "Add the 'alcatraz' command to your PATH for easy access")
 
         wrapper_src = os.path.join(config.install_dir, "alcatraz")
@@ -3473,7 +3478,7 @@ def _do_install_launcher(config: SetupConfig, wrapper_src: str, local_bin: str, 
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 14 — DAILY WORKFLOW & COMPLETE
+#  STEP 13 — DAILY WORKFLOW & COMPLETE
 # ══════════════════════════════════════════════════════════════════
 
 def step_daily_workflow(config: SetupConfig, came_from="next"):
@@ -3482,7 +3487,7 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(14, TOTAL_STEPS, "Daily Workflow",
+        show_step_header(13, TOTAL_STEPS, "Daily Workflow",
                          "How to use Claude Code safely every day")
 
         console.print("  [bold underline]Starting a Session[/]")
@@ -3553,7 +3558,7 @@ def step_daily_workflow(config: SetupConfig, came_from="next"):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  QUICK STEP 6 — FINALIZE (LAUNCHER + WORKFLOW + SECURITY NOTES)
+#  QUICK STEP 5 — FINALIZE (LAUNCHER + WORKFLOW + SECURITY NOTES)
 # ══════════════════════════════════════════════════════════════════
 
 def step_finalize_combined(config: SetupConfig, came_from="next"):
@@ -3562,7 +3567,7 @@ def step_finalize_combined(config: SetupConfig, came_from="next"):
     while True:
         clear_screen()
         show_banner()
-        show_step_header(6, QUICK_TOTAL_STEPS, "Setup Complete",
+        show_step_header(5, QUICK_TOTAL_STEPS, "Setup Complete",
                          "Launcher installation and next steps")
 
         # Auto-install launcher
@@ -3677,29 +3682,29 @@ def main():
 
     # Step lists — both share indices 0-1; mode switch evaluated at index 2
     manual_steps = [
-        step_preflight,             # 0  — Step 1:  Pre-flight checks
-        step_install_dir,           # 1  — Step 2:  Installation directory
-        step_profile,               # 2  — Step 3:  Profile selection
-        step_git_guardian,          # 3  — Step 4:  Git Guardian config
-        step_network,               # 4  — Step 5:  Network & ports
-        step_security,              # 5  — Step 6:  Security & auth
-        step_review_and_generate,   # 6  — Step 7:  Review & generate files
-        step_github_token_combined, # 7  — Step 8:  GitHub token (PAT + storage)
-        step_docker_build,          # 8  — Step 9:  Build Docker image
-        step_claude_auth,           # 9  — Step 10: Claude authentication
-        step_project_settings,      # 10 — Step 11: Project settings (.claude/)
-        step_branch_protection,     # 11 — Step 12: Branch protection
-        step_install_launcher,      # 12 — Step 13: Install global launcher
-        step_daily_workflow,        # 13 — Step 14: Daily workflow & complete
+        step_preflight,             # 0  — Pre-flight checks (not numbered)
+        step_install_dir,           # 1  — Step 1:  Installation directory
+        step_profile,               # 2  — Step 2:  Profile selection
+        step_git_guardian,          # 3  — Step 3:  Git Guardian config
+        step_network,               # 4  — Step 4:  Network & ports
+        step_security,              # 5  — Step 5:  Security & auth
+        step_review_and_generate,   # 6  — Step 6:  Review & generate files
+        step_github_token_combined, # 7  — Step 7:  GitHub token (PAT + storage)
+        step_docker_build,          # 8  — Step 8:  Build Docker image
+        step_claude_auth,           # 9  — Step 9:  Claude authentication
+        step_project_settings,      # 10 — Step 10: Project settings (.claude/)
+        step_branch_protection,     # 11 — Step 11: Branch protection
+        step_install_launcher,      # 12 — Step 12: Install global launcher
+        step_daily_workflow,        # 13 — Step 13: Daily workflow & complete
     ]
 
     quick_steps = [
-        step_preflight,                # 0  — Step 1: Pre-flight checks
-        step_install_dir,              # 1  — Step 2: Install dir + mode choice
-        step_quick_generate_and_build, # 2  — Step 3: Generate files + Docker build
-        step_github_token_combined,    # 3  — Step 4: GitHub token (PAT + storage)
-        step_claude_auth,              # 4  — Step 5: Claude authentication
-        step_finalize_combined,        # 5  — Step 6: Launcher + workflow + notes
+        step_preflight,                # 0  — Pre-flight checks (not numbered)
+        step_install_dir,              # 1  — Step 1: Install dir + mode choice
+        step_quick_generate_and_build, # 2  — Step 2: Generate files + Docker build
+        step_github_token_combined,    # 3  — Step 3: GitHub token (PAT + storage)
+        step_claude_auth,              # 4  — Step 4: Claude authentication
+        step_finalize_combined,        # 5  — Step 5: Launcher + workflow + notes
     ]
 
     steps = manual_steps
@@ -3714,9 +3719,9 @@ def main():
             if config.install_mode == "quick":
                 steps = quick_steps
                 config.step_display_overrides = {
-                    "github_token": (4, QUICK_TOTAL_STEPS),
-                    "docker_build": (5, QUICK_TOTAL_STEPS),
-                    "claude_auth": (5, QUICK_TOTAL_STEPS),
+                    "github_token": (3, QUICK_TOTAL_STEPS),
+                    "docker_build": (4, QUICK_TOTAL_STEPS),
+                    "claude_auth": (4, QUICK_TOTAL_STEPS),
                 }
             else:
                 steps = manual_steps

@@ -109,29 +109,28 @@ The mounted project directory is fully readable by Claude inside the container. 
 
 **Windows:** Double-click `windowsInstall.bat` from File Explorer. This launches the wizard automatically via WSL.
 
-The wizard handles everything else — 15 guided steps from configuration through to first launch.
+The wizard handles everything else — pre-flight checks followed by 13 guided steps from configuration through to first launch.
 
 ## What It Does
 
 | Step | Description |
 |------|-------------|
-| 1. Pre-flight | Verifies Docker, Git, and Bash are installed and running |
-| 2. Directory | Choose where to create the setup files |
-| 3. Profile | Pick Recommended / Minimal / Full / Custom component sets |
-| 4. Git Guardian | Configure protected branches and push behaviour |
-| 5. Network | Set default network mode and port forwarding |
-| 6. Security | Toggle deny lists, hooks, timeouts, resource limits |
-| 7. Generate | Creates all configuration files |
-| 8. GitHub PAT | Step-by-step guide to create a scoped access token |
-| 9. Token Storage | Securely store the PAT for container access |
-| 10. Docker Build | Build the Docker image (with live progress) |
-| 11. Claude Auth | One-time OAuth login for Claude Code |
-| 12. Project Settings | Deploy `.claude/settings.json` to your project |
-| 13. Branch Protection | Import the included branch ruleset into GitHub |
-| 14. Install Launcher | Add `alcatraz` command to PATH |
-| 15. Daily Workflow | Usage patterns and maintenance tips |
+| Pre-flight | Verifies Docker, Git, and Bash are installed and running |
+| 1. Directory | Choose where to create the setup files |
+| 2. Profile | Pick Recommended / Minimal / Full / Custom component sets |
+| 3. Git Guardian | Configure protected branches and push behaviour |
+| 4. Network | Set default network mode and port forwarding |
+| 5. Security | Toggle deny lists, hooks, timeouts, resource limits |
+| 6. Generate | Creates all configuration files |
+| 7. GitHub Token | Create and store a scoped GitHub Personal Access Token |
+| 8. Docker Build | Build the Docker image (with live progress) |
+| 9. Claude Auth | One-time OAuth login for Claude Code |
+| 10. Project Settings | Deploy `.claude/settings.json` to your project |
+| 11. Branch Protection | Import the included branch ruleset into GitHub |
+| 12. Install Launcher | Add `alcatraz` command to PATH |
+| 13. Daily Workflow | Usage patterns and maintenance tips |
 
-If you exit early after Step 7, you can complete the remaining steps manually:
+If you exit early after Step 6, you can complete the remaining steps manually:
 
 1. `cd <install-dir> && ./build.sh`
 2. Store your GitHub PAT in `~/.alcatraz-token`
@@ -403,7 +402,7 @@ ln -sf <install-dir>/alcatraz ~/.local/bin/alcatraz # Symlink launcher to PATH
 
 ### `chmod: Operation not permitted` (WSL)
 
-WSL cannot set Unix permissions on files that live on the Windows filesystem (`/mnt/c/...`) by default. Add `options = "metadata"` to `/etc/wsl.conf` and restart WSL. The wizard checks for this in Step 1 and shows fix instructions.
+WSL cannot set Unix permissions on files that live on the Windows filesystem (`/mnt/c/...`) by default. Add `options = "metadata"` to `/etc/wsl.conf` and restart WSL. The wizard checks for this during pre-flight and shows fix instructions.
 
 ### Claude asks to log in every time
 
