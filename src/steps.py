@@ -1937,13 +1937,6 @@ def step_finalize_combined(config: SetupConfig, came_from="next"):
         console.print("    [cyan]alcatraz[/]                              [dim]# Launch on current dir[/]")
         console.print()
 
-        console.print("  [bold underline]After a Session[/]")
-        console.print()
-        console.print("    [cyan]git log --oneline -10[/]       [dim]# Review what Claude committed[/]")
-        console.print("    [cyan]git diff main..HEAD[/]         [dim]# Full diff against main[/]")
-        console.print("    [cyan]gh pr create[/]                [dim]# Open a PR for review[/]")
-        console.print()
-
         # Security notes for skipped steps
         ruleset_path = os.path.join(config.install_dir, "branch-ruleset.json")
         settings_path = os.path.join(config.install_dir, "settings.json")
