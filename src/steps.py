@@ -1750,9 +1750,9 @@ def step_install_launcher(config: SetupConfig, came_from="next"):
 
         choices = []
         if not already_installed:
-            choices.append(("Attach symlink", "install"))
+            choices.append(("Add to PATH", "install"))
         else:
-            choices.append(("Reinstall / update symlink", "install"))
+            choices.append(("Add to PATH", "install"))
 
         nav = 1 if first_iter and came_from == "back" else 0
         first_iter = False
@@ -1768,7 +1768,7 @@ def step_install_launcher(config: SetupConfig, came_from="next"):
 
 
 def _do_install_launcher(config: SetupConfig, wrapper_src: str, local_bin: str, wrapper_dest: str):
-    """Perform the actual symlink + PATH setup."""
+    """Create symlink in ~/.local/bin and ensure it is on PATH."""
     home = os.path.expanduser("~")
 
     # 1. Ensure ~/.local/bin exists
@@ -1779,9 +1779,9 @@ def _do_install_launcher(config: SetupConfig, wrapper_src: str, local_bin: str, 
         if os.path.lexists(wrapper_dest):
             os.remove(wrapper_dest)
         os.symlink(wrapper_src, wrapper_dest)
-        console.print(f"  [green]\u2713[/] Symlinked [cyan]{wrapper_dest}[/] \u2192 [cyan]{wrapper_src}[/]")
+        console.print(f"  [green]\u2713[/] Linked [cyan]{wrapper_dest}[/] \u2192 [cyan]{wrapper_src}[/]")
     except OSError as e:
-        console.print(f"  [yellow]\u26a0[/]  Could not create symlink: {e}")
+        console.print(f"  [yellow]\u26a0[/]  Could not add to PATH: {e}")
         console.print(f"    [dim]Try manually: ln -sf {wrapper_src} {wrapper_dest}[/]")
         pause()
         return
@@ -1924,9 +1924,7 @@ def step_finalize_combined(config: SetupConfig, came_from="next"):
         wrapper_dest = os.path.join(local_bin, "alcatraz")
 
         already_installed = os.path.exists(wrapper_dest) or shutil.which("alcatraz") is not None
-        if not already_installed:
-            _do_install_launcher(config, wrapper_src, local_bin, wrapper_dest)
-        else:
+        if already_installed:
             existing = shutil.which("alcatraz") or wrapper_dest
             console.print(f"  [green]\u2713[/] [cyan]alcatraz[/] is already on your PATH: [dim]{existing}[/]")
         console.print()
@@ -1980,10 +1978,18 @@ def step_finalize_combined(config: SetupConfig, came_from="next"):
             padding=(1, 4),
         ))
 
+        choices = [("Add to PATH", "install")]
+
         nav = 1 if first_iter and came_from == "back" else 0
+        row = 0 if first_iter and came_from == "next" else None
         first_iter = False
-        result = step_menu([], initial_nav=nav, continue_label="Exit")
+        result = step_menu(choices, initial_nav=nav, initial_row=row, continue_label="Exit")
 
         if result == "back":
             return "back"
+
+        if result == "install":
+            _do_install_launcher(config, wrapper_src, local_bin, wrapper_dest)
+            continue
+
         return "next"
