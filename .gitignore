@@ -18,7 +18,6 @@ git-guardian.sh
 branch-ruleset.json
 pretool-hook.sh
 settings.json
-alcatraz
 
 # Credentials
 .alcatraz-token
