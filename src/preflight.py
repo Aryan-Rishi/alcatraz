@@ -101,13 +101,12 @@ def fix_wsl_metadata() -> bool:
         # If [automount] section exists, append the option under it
         if "[automount]" in existing.lower():
             # Already has section -- inject options line after the header
-            import re as _re
-            patched = _re.sub(
+            patched = re.sub(
                 r'(\[automount\])',
                 r'\1\noptions = "metadata"',
                 existing,
                 count=1,
-                flags=_re.IGNORECASE,
+                flags=re.IGNORECASE,
             )
             result = subprocess.run(
                 ["sudo", "tee", conf_path],

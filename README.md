@@ -20,6 +20,25 @@ By using this software, you acknowledge these limitations and accept responsibil
 
 ---
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [What It Does](#what-it-does)
+- [Requirements](#requirements)
+- [Generated Files](#generated-files)
+- [Profiles](#profiles)
+- [Daily Workflow](#daily-workflow)
+- [Launch Modes](#launch-modes)
+- [Multiple Projects](#multiple-projects)
+- [Maintenance](#maintenance)
+- [Quick Reference](#quick-reference)
+- [Security Architecture](#security-architecture)
+- [Troubleshooting](#troubleshooting)
+- [Customising the Dockerfile](#customising-the-dockerfile)
+- [Headless / Non-Interactive Mode](#headless--non-interactive-mode)
+
+---
+
 ## Security Architecture
 
 Alcatraz uses a layered security model. No single layer is sufficient on its own — they work together to constrain what Claude can do.
@@ -85,22 +104,8 @@ The mounted project directory is fully readable by Claude inside the container. 
 
 ---
 
-## Table of Contents
-
-- [Quick Start](#quick-start)
-- [What It Does](#what-it-does)
-- [Requirements](#requirements)
-- [Generated Files](#generated-files)
-- [Profiles](#profiles)
-- [Daily Workflow](#daily-workflow)
-- [Multiple Projects](#multiple-projects)
-- [Maintenance](#maintenance)
-- [Quick Reference](#quick-reference)
-- [Troubleshooting](#troubleshooting)
-- [Customising the Dockerfile](#customising-the-dockerfile)
-- [Headless / Non-Interactive Mode](#headless--non-interactive-mode)
-
 ## Quick Start
+It is recommended to install docker and git before attempting the install wizard.
 
 **Linux / macOS:**
 ```bash
@@ -109,19 +114,35 @@ The mounted project directory is fully readable by Claude inside the container. 
 
 **Windows:** Double-click `windowsInstall.bat` from File Explorer. This launches the wizard automatically via WSL.
 
-The wizard handles everything else — pre-flight checks followed by 13 guided steps from configuration through to first launch.
+The wizard handles everything else — pre-flight checks, then a choice between **Recommended Install** (4 steps, sensible defaults) or **Custom Install** (13 steps, full control).
 
 ## What It Does
 
+After pre-flight checks (Docker, Git, Bash), the wizard offers two installation modes:
+
+### Recommended Install (default)
+
+Uses sensible defaults (Recommended profile, bridge network, deterministic ports, deny list + PreToolUse hook, Git Guardian protecting main/master/develop/production/release).
+
 | Step | Description |
 |------|-------------|
-| Pre-flight | Verifies Docker, Git, and Bash are installed and running |
+| 1. Install | Choose directory, generate files, and build Docker image |
+| 2. GitHub Token | Create and store a scoped GitHub Personal Access Token |
+| 3. Claude Auth | One-time OAuth login for Claude Code |
+| 4. Finalize | Install launcher, workflow tips, and additional security steps |
+
+### Custom Install
+
+Full control over every configuration option.
+
+| Step | Description |
+|------|-------------|
 | 1. Directory | Choose where to create the setup files |
 | 2. Profile | Pick Recommended / Minimal / Full / Custom component sets |
 | 3. Git Guardian | Configure protected branches and push behaviour |
 | 4. Network | Set default network mode and port forwarding |
 | 5. Security | Toggle deny lists, hooks, timeouts, resource limits |
-| 6. Generate | Creates all configuration files |
+| 6. Review & Generate | Review configuration summary and generate all files |
 | 7. GitHub Token | Create and store a scoped GitHub Personal Access Token |
 | 8. Docker Build | Build the Docker image (with live progress) |
 | 9. Claude Auth | One-time OAuth login for Claude Code |
@@ -130,12 +151,14 @@ The wizard handles everything else — pre-flight checks followed by 13 guided s
 | 12. Install Launcher | Add `alcatraz` command to PATH |
 | 13. Daily Workflow | Usage patterns and maintenance tips |
 
-If you exit early after Step 6, you can complete the remaining steps manually:
+### If you exit early
+
+After file generation, the remaining steps can be completed manually:
 
 1. `cd <install-dir> && ./build.sh`
 2. Store your GitHub PAT in `~/.alcatraz-token`
-3. Import `branch-ruleset.json` on each repo (Settings → Rules → Rulesets → Import)
-4. Authenticate Claude Code (one-time OAuth login)
+3. `./auth.sh` (one-time OAuth login)
+4. Import `branch-ruleset.json` on each repo (Settings → Rules → Rulesets → Import)
 5. `ln -sf <install-dir>/alcatraz ~/.local/bin/alcatraz`
 6. `alcatraz /path/to/project`
 
@@ -159,10 +182,13 @@ The wizard creates the following in your chosen install directory:
 ├── run.sh                  # Launch script (called by the alcatraz wrapper)
 ├── alcatraz                # Quick launcher — add to PATH for global access
 ├── build.sh                # One-command image builder
+├── auth.sh                 # One-time OAuth login helper
 ├── branch-ruleset.json     # GitHub branch protection ruleset (import this)
 ├── pretool-hook.sh         # PreToolUse safety hook (if enabled)
-└── settings.json           # Permission deny list (copy to project .claude/)
+└── settings.json           # Permission deny list (if deny list or hooks enabled)
 ```
+
+For a comprehensive manual guide covering the same setup without the wizard (threat model, detailed PAT permissions, container management, CLAUDE.md memory/rules, additional security measures), see [`OtherFiles/claude-code-docker-setup-guide.md`](OtherFiles/claude-code-docker-setup-guide.md).
 
 ## Profiles
 
@@ -568,4 +594,9 @@ docker run --gpus all ...
 
 ## Headless / Non-Interactive Mode
 
-The wizard is a one-time configuration tool. Once the files are generated, you can use them directly without the wizard for automated or scripted deployments.
+The wizard is a one-time configuration tool. Once the files are generated, you can use them directly without the wizard for automated or scripted deployments:
+
+1. `cd <install-dir> && ./build.sh` — build the Docker image
+2. Store your GitHub PAT: `echo 'github_pat_...' > ~/.alcatraz-token && chmod 600 ~/.alcatraz-token`
+3. `./auth.sh` — one-time OAuth login (interactive, requires a browser)
+4. `alcatraz /path/to/project` — launch a session

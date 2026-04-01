@@ -87,16 +87,14 @@ class SetupConfig:
         2: "Git Guardian",
         3: "Network & Ports",
         4: "Security & Auth",
-        # Post-generation steps
+        # Post-generation steps (5+6 tracked separately within combined GitHub Token step)
         5: "GitHub PAT",
         6: "Token Storage",
         7: "Docker Build",
         8: "Claude Auth",
         9: "Project Settings",
         10: "Branch Protection",
-        11: "First Launch",
-        12: "Install Launcher",
-        13: "Daily Workflow",
+        11: "Daily Workflow",
     }
 
     def mark_complete(self, step_index: int):

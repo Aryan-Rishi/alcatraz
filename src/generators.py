@@ -1,6 +1,5 @@
 """File generator functions for the Alcatraz Setup Wizard."""
 
-import os
 import sys
 import json
 import textwrap
