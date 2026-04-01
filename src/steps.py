@@ -76,9 +76,10 @@ def step_install_dir(config: SetupConfig, came_from="next"):
         console.print()
 
         nav = 1 if first_iter and came_from == "back" else 0
+        row = 0 if first_iter and came_from == "next" else None
         first_iter = False
         continue_label = "Install" if config.install_mode == "recommended" else "Continue"
-        result = step_menu([("Edit directory", "edit")], initial_nav=nav, continue_label=continue_label)
+        result = step_menu([("Edit directory", "edit")], initial_nav=nav, initial_row=row, continue_label=continue_label)
 
         if result == "back":
             return result
@@ -254,8 +255,9 @@ def step_profile(config: SetupConfig, came_from="next"):
         console.print()
 
         nav = 1 if first_iter and came_from == "back" else 0
+        row = 0 if first_iter and came_from == "next" else None
         first_iter = False
-        result = step_menu([("Change profile", "edit")], initial_nav=nav)
+        result = step_menu([("Change profile", "edit")], initial_nav=nav, initial_row=row)
         _dbg(f"[step_profile] step_menu returned: {result!r}, type={type(result).__name__}")
 
         if result == "back":
@@ -423,8 +425,9 @@ def step_git_guardian(config: SetupConfig, came_from="next"):
         console.print()
 
         nav = 1 if first_iter and came_from == "back" else 0
+        row = 0 if first_iter and came_from == "next" else None
         first_iter = False
-        result = step_menu([("Edit Git Guardian settings", "edit")], initial_nav=nav)
+        result = step_menu([("Edit Git Guardian settings", "edit")], initial_nav=nav, initial_row=row)
 
         if result == "back":
             return result
@@ -541,8 +544,9 @@ def step_network(config: SetupConfig, came_from="next"):
         console.print()
 
         nav = 1 if first_iter and came_from == "back" else 0
+        row = 0 if first_iter and came_from == "next" else None
         first_iter = False
-        result = step_menu([("Edit network settings", "edit")], initial_nav=nav)
+        result = step_menu([("Edit network settings", "edit")], initial_nav=nav, initial_row=row)
 
         if result == "back":
             return result
@@ -685,8 +689,9 @@ def step_security(config: SetupConfig, came_from="next"):
         console.print()
 
         nav = 1 if first_iter and came_from == "back" else 0
+        row = 0 if first_iter and came_from == "next" else None
         first_iter = False
-        result = step_menu([("Edit security & auth settings", "edit")], initial_nav=nav)
+        result = step_menu([("Edit security & auth settings", "edit")], initial_nav=nav, initial_row=row)
 
         if result == "back":
             return result
@@ -802,8 +807,8 @@ def step_review_and_generate(config: SetupConfig, came_from="next"):
 
     # ── Generate! ──
     _generate_files(config)
-    pause()
-    return "next"
+    console.print()
+    return step_menu([], initial_nav=0)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1073,8 +1078,9 @@ def step_token_storage(config: SetupConfig, came_from="next"):
             choices = [("Replace existing token", "store")]
 
         nav = 1 if first_iter and came_from == "back" else 0
+        row = 0 if first_iter and came_from == "next" else None
         first_iter = False
-        result = step_menu(choices, initial_nav=nav)
+        result = step_menu(choices, initial_nav=nav, initial_row=row)
 
         if result == "back":
             return "back"
@@ -1337,10 +1343,11 @@ def step_docker_build(config: SetupConfig, came_from="next"):
             pass
 
         nav = 1 if first_iter and came_from == "back" else 0
+        row = 0 if first_iter and came_from == "next" else None
         first_iter = False
         result = step_menu([
             ("Build now", "build"),
-        ], initial_nav=nav)
+        ], initial_nav=nav, initial_row=row)
 
         if result == "back":
             return "back"
@@ -1628,8 +1635,9 @@ def step_project_settings(config: SetupConfig, came_from="next"):
             choices.append(("Copy settings to a project now", "copy"))
 
         nav = 1 if first_iter and came_from == "back" else 0
+        row = 0 if first_iter and came_from == "next" and choices else None
         first_iter = False
-        result = step_menu(choices, initial_nav=nav)
+        result = step_menu(choices, initial_nav=nav, initial_row=row)
 
         if result == "back":
             return "back"
@@ -1748,15 +1756,12 @@ def step_install_launcher(config: SetupConfig, came_from="next"):
             console.print(f"  [green]\u2713[/] [cyan]alcatraz[/] is already on your PATH: [dim]{existing}[/]")
             console.print()
 
-        choices = []
-        if not already_installed:
-            choices.append(("Add to PATH", "install"))
-        else:
-            choices.append(("Add to PATH", "install"))
+        choices = [("Add to PATH", "install")]
 
         nav = 1 if first_iter and came_from == "back" else 0
+        row = 0 if first_iter and came_from == "next" else None
         first_iter = False
-        result = step_menu(choices, initial_nav=nav)
+        result = step_menu(choices, initial_nav=nav, initial_row=row)
 
         if result == "back":
             return "back"
