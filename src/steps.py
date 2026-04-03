@@ -1601,7 +1601,7 @@ def _do_install_launcher(config: SetupConfig, wrapper_src: str, local_bin: str, 
     # 4. Verify
     console.print()
     console.print("  [bold]After restarting your terminal, you can run:[/]")
-    console.print("    [cyan]alcatraz /path/to/project[/]")
+    console.print("    [cyan]alcatraz[/]")
     console.print()
     pause()
 
