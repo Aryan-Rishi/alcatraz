@@ -62,6 +62,9 @@ _DEBUG_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "wiz
 _SENSITIVE_RE = re.compile(r'(token|key|password|secret|credential|pat)[=: ]+\S+', re.IGNORECASE)
 
 def _dbg(msg: str):
-    sanitized = _SENSITIVE_RE.sub(r'\1=***REDACTED***', msg)
-    with open(_DEBUG_LOG, "a") as f:
-        f.write(f"{sanitized}\n")
+    try:
+        sanitized = _SENSITIVE_RE.sub(r'\1=***REDACTED***', msg)
+        with open(_DEBUG_LOG, "a") as f:
+            f.write(f"{sanitized}\n")
+    except OSError:
+        pass

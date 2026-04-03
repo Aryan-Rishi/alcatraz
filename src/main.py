@@ -81,8 +81,11 @@ def main():
     current = 0
     came_from = "next"
     # Clear debug log at start
-    with open(_DEBUG_LOG, "w") as f:
-        f.write("=== Wizard debug trace ===\n")
+    try:
+        with open(_DEBUG_LOG, "w") as f:
+            f.write("=== Wizard debug trace ===\n")
+    except OSError:
+        pass
     while current < len(steps):
         # Mode switch at the boundary (index 2) — both lists share 0-1
         if current == 2:
