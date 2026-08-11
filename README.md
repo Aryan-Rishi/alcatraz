@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <img src="banner.svg" alt="Alcatraz" width="700">
 </p>
@@ -363,7 +365,7 @@ Build different Docker images only when projects have different system-level dep
 GitHub PATs expire. When yours does:
 
 ```bash
-echo 'github_pat_NEW_TOKEN' > ~/.alcatraz-token
+echo 'github_pat_NEW_TOKEN' > ~/.alcatraz-token && chmod 600 ~/.alcatraz-token
 echo 'YYYY-MM-DD' > ~/.alcatraz-token-expiry
 ```
 
